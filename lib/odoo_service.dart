@@ -1,7 +1,10 @@
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:http/io_client.dart';
 
 class OdooService {
   final OdooClient _client;
@@ -10,6 +13,27 @@ class OdooService {
   String? currentUsername;
 
   OdooService(String baseUrl) : _client = OdooClient(baseUrl);
+
+  Future<void> _configureHttpClient() async {
+    try {
+      // Load the certificate from assets
+      final cert = await rootBundle.load('assets/alphasoft.crt');
+      final securityContext = SecurityContext();
+      securityContext.setTrustedCertificatesBytes(cert.buffer.asUint8List());
+
+      // Create an HTTP client with the custom security context
+      final httpClient = HttpClient(context: securityContext);
+
+      // Wrap the HttpClient in an IOClient (from the http package)
+      final ioClient = IOClient(httpClient);
+
+      // Assign the IOClient to the OdooClient
+      _client.httpClient = ioClient;
+    } catch (e) {
+      throw Exception('Failed to configure HTTP client: $e');
+    }
+  }
+
   Future<void> _storeSession(OdooSession session) async {
     await _storage.write(key: _sessionKey, value: jsonEncode(session.toJson()));
   }
@@ -36,6 +60,7 @@ class OdooService {
 
   Future<void> login(String database, String username, String password) async {
     try {
+      await _configureHttpClient(); // Konfigurasi HTTP client dengan sertifikat
       await _client.authenticate(database, username, password);
       currentUsername = username; // Simpan username untuk keperluan lainnya
     } on OdooException catch (e) {
@@ -615,7 +640,7 @@ class OdooService {
         'kwargs': {
           'domain': [
             ['invoice_origin', '=', '2'], // Filter invoice_origin = 2
-            ['invoice_destination', '=', '3'], // Filter invoice_destination = 3
+            ['invoice_destination', '=', '4'], // Filter invoice_destination = 3
             [
               'salesman',
               '=',
@@ -749,6 +774,7 @@ class OdooService {
             'invoice_origin',
             'invoice_destination',
             'transfer_date',
+            'create_date',
             'notes',
             'salesman',
             'account_move_ids',
@@ -1028,4 +1054,20 @@ class OdooService {
       throw Exception('Failed to delete order line: $e');
     }
   }
+  
+  Future<void> callMethod(String model, String method, List<dynamic> args,
+    [Map<String, dynamic>? kwargs]) async {
+  await checkSession(); // Pastikan sesi masih aktif
+  try {
+    await _client.callKw({
+      'model': model,
+      'method': method,
+      'args': args,
+      'kwargs': kwargs ?? {},
+    });
+  } catch (e) {
+    throw Exception('RPC call failed: $e');
+  }
+}
+
 }

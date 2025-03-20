@@ -1,16 +1,20 @@
--dontwarn javax.annotation.Nullable
--dontwarn javax.annotation.concurrent.GuardedBy
--dontwarn com.google.android.play.**
--keep class com.google.android.play.** { *; }
--keep class com.google.android.play.core.splitinstall.** { *; }
--keep class com.google.android.play.core.tasks.** { *; }
--keep class odoo.** { *; }
+# Flutter
+-keep class io.flutter.** { *; }
+-keep class io.flutter.embedding.** { *; }
+
+# Odoo RPC
+-keep class com.odoo.** { *; }
+
+# GSON (if used)
+-keep class com.google.gson.** { *; }
+
+# Retrofit (if used)
+-keep class retrofit2.** { *; }
+-dontwarn retrofit2.**
+
+# OkHttp (if used)
 -keep class okhttp3.** { *; }
 -dontwarn okhttp3.**
--keep class io.flutter.** { *; }
--dontwarn io.flutter.**
--keep class io.flutter.embedding.** { *; }
--keep class com.odoo.** { *; }
--keep class org.apache.xmlrpc.** { *; }
--keepattributes Signature
--keepattributes *Annotation*
+
+# Other dependencies
+-keep class odoo_rpc.** { *; }

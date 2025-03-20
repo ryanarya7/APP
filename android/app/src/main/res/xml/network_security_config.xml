@@ -1,11 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <domain-config cleartextTrafficPermitted="true">
+    <domain-config cleartextTrafficPermitted="false">
         <domain includeSubdomains="true">jlm17.alphasoft.co.id</domain>
-    </domain-config>
-    <base-config>
         <trust-anchors>
-            <certificates src="@raw/my_certificate" />
+            <certificates src="@raw/alphasoft"/>
+            <certificates src="system"/>
         </trust-anchors>
-    </base-config>
+    </domain-config>
 </network-security-config>

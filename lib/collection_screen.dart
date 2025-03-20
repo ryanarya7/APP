@@ -234,7 +234,7 @@ class _CollectionScreenState extends State<CollectionScreen> {
                                   style: TextStyle(fontSize: 12),
                                 ),
                                 Text(
-                                  collection['transfer_date'] ?? 'N/A',
+                                  collection['create_date'] ?? 'N/A',
                                   style: const TextStyle(fontSize: 12),
                                 ),
                               ],

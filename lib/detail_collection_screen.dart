@@ -92,10 +92,77 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Collection Detail',
-            style: TextStyle(fontWeight: FontWeight.bold)),
-        backgroundColor: Colors.blue[300],
-      ),
+  title: const Text('Collection Detail',
+      style: TextStyle(fontWeight: FontWeight.bold)),
+  backgroundColor: Colors.blue[300],
+  actions: [
+    FutureBuilder<Map<String, dynamic>>(
+      future: collectionDetail,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.connectionState == ConnectionState.waiting) {
+          return Container();
+        }
+
+        final detail = snapshot.data!;
+        final state = detail['state'];
+
+        if (state == 'transfer') {
+          return TextButton(
+            onPressed: () async {
+              try {
+                await widget.odooService.callMethod(
+                  'invoice.collection',
+                  'action_done',
+                  [collectionId],
+                );
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Collection marked as received')),
+                );
+
+                setState(() {
+                  _loadCollectionDetail(collectionId!);
+                });
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error: $e')),
+                );
+              }
+            },
+            child: const Text('To Received', style: TextStyle(color: Colors.white)),
+          );
+        } else if (state == 'received') {
+          return TextButton(
+            onPressed: () async {
+              try {
+                await widget.odooService.callMethod(
+                  'invoice.collection',
+                  'action_return_to_piutang',
+                  [collectionId],
+                );
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Returned to Adm Piutang')),
+                );
+
+                setState(() {
+                  _loadCollectionDetail(collectionId!);
+                });
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Error: $e')),
+                );
+              }
+            },
+            child: const Text('Back to adm piutang', style: TextStyle(color: Colors.white)),
+          );
+        } else {
+          return Container();
+        }
+      },
+    ),
+  ],
+),
       body: FutureBuilder<Map<String, dynamic>>(
         future: collectionDetail,
         builder: (context, snapshot) {
@@ -161,7 +228,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                             const Spacer(),
                             // Text Transfer Date (Kanan)
                             Text(
-                              '${detail['transfer_date'] ?? 'N/A'}',
+                              '${detail['create_date'] ?? 'N/A'}',
                               style: const TextStyle(fontSize: 12),
                             ),
                           ],
@@ -496,8 +563,12 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                                                         TextStyle(fontSize: 12),
                                                   ),
                                                   Text(
-                                                    invoice['receipt_via'] ??
-                                                        'Unknown',
+                                                    (invoice['receipt_via']
+                                                                is String &&
+                                                            invoice['receipt_via']
+                                                                .isNotEmpty)
+                                                        ? invoice['receipt_via']
+                                                        : 'Unknown',
                                                     style: const TextStyle(
                                                         fontSize: 12),
                                                   ),
