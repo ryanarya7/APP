@@ -47,7 +47,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
           odooService: widget.odooService,
           invoiceId: invoice['id'],
           invoiceName: invoice['name'],
-          initialAmount: invoice['amount_residual_signed'] ?? 0,
+          initialAmount: 0,
           partnerId: invoice['partner_id']?[0]?.toString() ?? '',
         );
       },
@@ -83,86 +83,172 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
     }
   }
 
+  String _formatPaymentState(String? state) {
+    switch (state) {
+      case 'not_paid':
+        return 'Not Paid';
+      case 'in_payment':
+        return 'In Payment';
+      case 'paid':
+        return 'Paid';
+      case 'partial':
+        return 'Partially Paid';
+      case 'reversed':
+        return 'Reversed';
+      case 'invoicing_legacy':
+        return 'Invoicing App Legacy';
+      default:
+        return 'Unknown';
+    }
+  }
+
   String _getStateDisplayName(String? state) {
     if (state == null) return 'Unknown';
     return toBeginningOfSentenceCase(state.toLowerCase()) ?? state;
+  }
+
+  TableRow _buildInvoiceDetailRow(String title, dynamic value,
+      // ignore: unused_element
+      {Color? iconColor}) {
+    Widget valueWidget;
+
+    if (value is Widget) {
+      valueWidget = value;
+    } else {
+      valueWidget = Text(
+        value.toString(),
+        style: const TextStyle(fontSize: 12),
+      );
+    }
+
+    return TableRow(
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.0),
+          child: Text(title, style: const TextStyle(fontSize: 12)),
+        ),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 2.0),
+          child: Text(" :", style: TextStyle(fontSize: 12)),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.0),
+          child: valueWidget,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTotalSummaryRow(String label, double amount) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+          Text(
+            currencyFormatter.format(amount),
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String? _removeHtmlTags(dynamic htmlString) {
+    // Check if the input is a valid string
+    if (htmlString is String && htmlString.isNotEmpty) {
+      // Use a regular expression to remove all HTML tags
+      final regex = RegExp(r'<[^>]*>');
+      return htmlString.replaceAll(regex, '').trim();
+    }
+    // Return null or a fallback value if the input is not a valid string
+    return null;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-  title: const Text('Collection Detail',
-      style: TextStyle(fontWeight: FontWeight.bold)),
-  backgroundColor: Colors.blue[300],
-  actions: [
-    FutureBuilder<Map<String, dynamic>>(
-      future: collectionDetail,
-      builder: (context, snapshot) {
-        if (!snapshot.hasData || snapshot.connectionState == ConnectionState.waiting) {
-          return Container();
-        }
+        title: const Text('Collection Detail',
+            style: TextStyle(fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.blue[300],
+        actions: [
+          FutureBuilder<Map<String, dynamic>>(
+            future: collectionDetail,
+            builder: (context, snapshot) {
+              if (!snapshot.hasData ||
+                  snapshot.connectionState == ConnectionState.waiting) {
+                return Container();
+              }
 
-        final detail = snapshot.data!;
-        final state = detail['state'];
+              final detail = snapshot.data!;
+              final state = detail['state'];
 
-        if (state == 'transfer') {
-          return TextButton(
-            onPressed: () async {
-              try {
-                await widget.odooService.callMethod(
-                  'invoice.collection',
-                  'action_done',
-                  [collectionId],
+              if (state == 'transfer') {
+                return TextButton(
+                  onPressed: () async {
+                    try {
+                      await widget.odooService.callMethod(
+                        'invoice.collection',
+                        'action_done',
+                        [collectionId],
+                      );
+
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Collection marked as received')),
+                      );
+
+                      setState(() {
+                        _loadCollectionDetail(collectionId!);
+                      });
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('To Received',
+                      style: TextStyle(color: Colors.white)),
                 );
+              } else if (state == 'received') {
+                return TextButton(
+                  onPressed: () async {
+                    try {
+                      await widget.odooService.callMethod(
+                        'invoice.collection',
+                        'action_return_to_piutang',
+                        [collectionId],
+                      );
 
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Collection marked as received')),
-                );
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                            content: Text('Returned to Adm Piutang')),
+                      );
 
-                setState(() {
-                  _loadCollectionDetail(collectionId!);
-                });
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
+                      setState(() {
+                        _loadCollectionDetail(collectionId!);
+                      });
+                    } catch (e) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error: $e')),
+                      );
+                    }
+                  },
+                  child: const Text('Back to adm piutang',
+                      style: TextStyle(color: Colors.white)),
                 );
+              } else {
+                return Container();
               }
             },
-            child: const Text('To Received', style: TextStyle(color: Colors.white)),
-          );
-        } else if (state == 'received') {
-          return TextButton(
-            onPressed: () async {
-              try {
-                await widget.odooService.callMethod(
-                  'invoice.collection',
-                  'action_return_to_piutang',
-                  [collectionId],
-                );
-
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Returned to Adm Piutang')),
-                );
-
-                setState(() {
-                  _loadCollectionDetail(collectionId!);
-                });
-              } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Error: $e')),
-                );
-              }
-            },
-            child: const Text('Back to adm piutang', style: TextStyle(color: Colors.white)),
-          );
-        } else {
-          return Container();
-        }
-      },
-    ),
-  ],
-),
+          ),
+        ],
+      ),
       body: FutureBuilder<Map<String, dynamic>>(
         future: collectionDetail,
         builder: (context, snapshot) {
@@ -306,6 +392,29 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                                 ),
                               ],
                             ),
+                            const TableRow(
+                              children: [
+                                SizedBox(height: 2),
+                                SizedBox(),
+                                SizedBox(),
+                              ],
+                            ),
+                            TableRow(
+                              children: [
+                                const Text(
+                                  "Note",
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                const Text(
+                                  " :",
+                                  style: TextStyle(fontSize: 12),
+                                ),
+                                Text(
+                                  _removeHtmlTags(detail['notes']) ?? 'N/A',
+                                  style: const TextStyle(fontSize: 12),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
                         // const Text(
@@ -327,6 +436,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                   'Invoices :',
                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                 ),
+                const SizedBox(height: 8),
                 FutureBuilder<List<Map<String, dynamic>>>(
                   future: fetchInvoices(accountMoveIds),
                   builder: (context, invoiceSnapshot) {
@@ -337,8 +447,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                     if (invoiceSnapshot.hasError) {
                       return Center(
                         child: Text(
-                          'Error fetching invoices: ${invoiceSnapshot.error}',
-                        ),
+                            'Error fetching invoices: ${invoiceSnapshot.error}'),
                       );
                     }
 
@@ -348,16 +457,15 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                           'No invoices linked to this collection.');
                     }
 
-                    // Hitung total amount, residual, dan partial payment
                     final totalAmount = invoices.fold<double>(
                       0.0,
                       (sum, invoice) => sum + (invoice['amount_total'] ?? 0.0),
                     );
-                    final totalResidual = invoices.fold<double>(
-                      0.0,
-                      (sum, invoice) =>
-                          sum + (invoice['amount_residual_signed'] ?? 0.0),
-                    );
+                    // final totalResidual = invoices.fold<double>(
+                    //   0.0,
+                    //   (sum, invoice) =>
+                    //       sum + (invoice['amount_residual_signed'] ?? 0.0),
+                    // );
                     final totalPartialPayment = invoices.fold<double>(
                       0.0,
                       (sum, invoice) =>
@@ -378,273 +486,132 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                               elevation: 3,
                               child: Padding(
                                 padding: const EdgeInsets.all(12.0),
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.center,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    // Informasi Utama Invoice
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          // Header Invoice
-                                          Row(
-                                            children: [
-                                              Text(
-                                                invoice['name'] ??
-                                                    'Unknown Invoice',
-                                                style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight: FontWeight.bold,
-                                                ),
-                                              ),
-                                              const SizedBox(width: 25),
-                                              Container(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 2,
-                                                ),
-                                                decoration: BoxDecoration(
-                                                  color: invoice[
-                                                              'payment_state'] ==
-                                                          'paid'
-                                                      ? Colors.green
-                                                      : (invoice['payment_state'] ==
-                                                              'partial'
-                                                          ? Colors.orange
-                                                          : Colors.red),
-                                                  borderRadius:
-                                                      BorderRadius.circular(8),
-                                                ),
-                                                child: Text(
-                                                  _getStateDisplayName(
-                                                      invoice['payment_state']),
-                                                  style: const TextStyle(
-                                                    color: Colors.white,
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12,
-                                                  ),
-                                                ),
-                                              ),
-                                              const SizedBox(width: 25),
-                                              Align(
-                                                alignment: Alignment.topRight,
-                                                child: GestureDetector(
-                                                  onTap: () =>
-                                                      _openCheckWizard(invoice),
-                                                  child: Container(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
+                                    Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            invoice['name'] ??
+                                                'Unknown Invoice',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                          ),
+                                        ),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: invoice['payment_state'] ==
+                                                    'paid'
+                                                ? Colors.green
+                                                : (invoice['payment_state'] ==
+                                                        'partial'
+                                                    ? Colors.orange
+                                                    : Colors.red),
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                          ),
+                                          child: Text(
+                                            _formatPaymentState(
+                                                invoice['payment_state']),
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        if (collectionState == 'received')
+                                          GestureDetector(
+                                            onTap: () =>
+                                                _openCheckWizard(invoice),
+                                            child: Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
                                                       horizontal: 8,
-                                                      vertical: 2,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.purple,
-                                                      borderRadius:
-                                                          BorderRadius.circular(
-                                                              8),
-                                                    ),
-                                                    child: const Text(
-                                                      'Check',
-                                                      style: TextStyle(
-                                                        color: Colors.white,
-                                                        fontWeight:
-                                                            FontWeight.bold,
-                                                        fontSize: 12,
-                                                      ),
-                                                    ),
-                                                  ),
+                                                      vertical: 2),
+                                              decoration: BoxDecoration(
+                                                color: Colors.purple,
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
+                                              child: const Text(
+                                                'Check',
+                                                style: TextStyle(
+                                                  color: Colors.white,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 12,
                                                 ),
                                               ),
-                                            ],
+                                            ),
                                           ),
-                                          const SizedBox(height: 4),
-                                          Table(
-                                            columnWidths: const {
-                                              0: IntrinsicColumnWidth(),
-                                              1: FixedColumnWidth(12),
-                                              2: FlexColumnWidth(),
-                                            },
+                                      ],
+                                    ),
+                                    const Divider(height: 16),
+                                    Table(
+                                      columnWidths: const {
+                                        0: IntrinsicColumnWidth(),
+                                        1: FixedColumnWidth(12),
+                                        2: FlexColumnWidth(),
+                                      },
+                                      children: [
+                                        _buildInvoiceDetailRow(
+                                          "Customer",
+                                          invoice['partner_id']?[1] ??
+                                              'Unknown',
+                                        ),
+                                        _buildInvoiceDetailRow(
+                                          "Amount",
+                                          currencyFormatter.format(
+                                              invoice['amount_total'] ?? 0),
+                                        ),
+                                        _buildInvoiceDetailRow(
+                                          "Amount Due",
+                                          currencyFormatter.format(invoice[
+                                                  'amount_residual_signed'] ??
+                                              0),
+                                        ),
+                                        _buildInvoiceDetailRow(
+                                          "Receipt Via",
+                                          (invoice['receipt_via'] is String &&
+                                                  invoice['receipt_via']
+                                                      .isNotEmpty)
+                                              ? invoice['receipt_via']
+                                              : 'Unknown',
+                                        ),
+                                        _buildInvoiceDetailRow(
+                                          "Check",
+                                          Row(
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.start,
                                             children: [
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Customer",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Text(
-                                                    invoice['partner_id']?[1] ??
-                                                        'Unknown',
-                                                    style: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                ],
-                                              ),
-                                              const TableRow(
-                                                children: [
-                                                  SizedBox(height: 4),
-                                                  SizedBox(),
-                                                  SizedBox(),
-                                                ],
-                                              ),
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Amount",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Text(
-                                                    currencyFormatter.format(
-                                                        invoice['amount_total'] ??
-                                                            0),
-                                                    style: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                ],
-                                              ),
-                                              const TableRow(
-                                                children: [
-                                                  SizedBox(height: 4),
-                                                  SizedBox(),
-                                                  SizedBox(),
-                                                ],
-                                              ),
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Amount Due",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Text(
-                                                    currencyFormatter.format(
-                                                        invoice['amount_residual_signed'] ??
-                                                            0),
-                                                    style: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                ],
-                                              ),
-                                              const TableRow(
-                                                children: [
-                                                  SizedBox(height: 4),
-                                                  SizedBox(),
-                                                  SizedBox(),
-                                                ],
-                                              ),
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Receipt Via",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Text(
-                                                    (invoice['receipt_via']
-                                                                is String &&
-                                                            invoice['receipt_via']
-                                                                .isNotEmpty)
-                                                        ? invoice['receipt_via']
-                                                        : 'Unknown',
-                                                    style: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                ],
-                                              ),
-                                              const TableRow(
-                                                children: [
-                                                  SizedBox(height: 4),
-                                                  SizedBox(),
-                                                  SizedBox(),
-                                                ],
-                                              ),
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Check",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Expanded(
-                                                    child: Row(
-                                                      children: [
-                                                        Icon(
-                                                          (invoice[
-                                                                  'check_payment_invoice'])
-                                                              ? Icons.check
-                                                              : Icons.close,
-                                                          color: (invoice[
-                                                                      'check_payment_invoice'] ==
-                                                                  true)
-                                                              ? Colors.green
-                                                              : Colors.red,
-                                                          size: 16,
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
-                                              const TableRow(
-                                                children: [
-                                                  SizedBox(height: 4),
-                                                  SizedBox(),
-                                                  SizedBox(),
-                                                ],
-                                              ),
-                                              TableRow(
-                                                children: [
-                                                  const Text(
-                                                    "Amount Payment",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  const Text(
-                                                    " :",
-                                                    style:
-                                                        TextStyle(fontSize: 12),
-                                                  ),
-                                                  Text(
-                                                    currencyFormatter.format(
-                                                        invoice['partial_total_payment'] ??
-                                                            0),
-                                                    style: const TextStyle(
-                                                        fontSize: 12),
-                                                  ),
-                                                ],
+                                              Icon(
+                                                invoice['check_payment_invoice'] ==
+                                                        true
+                                                    ? Icons.check
+                                                    : Icons.close,
+                                                color:
+                                                    invoice['check_payment_invoice'] ==
+                                                            true
+                                                        ? Colors.green
+                                                        : Colors.red,
+                                                size: 16,
                                               ),
                                             ],
                                           ),
-                                        ],
-                                      ),
+                                        ),
+                                        _buildInvoiceDetailRow(
+                                          "Amount Payment",
+                                          currencyFormatter.format(invoice[
+                                                  'partial_total_payment'] ??
+                                              0),
+                                        ),
+                                      ],
                                     ),
                                   ],
                                 ),
@@ -653,72 +620,17 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                           },
                         ),
                         const SizedBox(height: 10),
-// Tampilkan Total Summary
                         const Divider(),
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 10),
                           child: Column(
                             children: [
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    "Total",
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    currencyFormatter.format(totalAmount),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    "Total Residual",
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    currencyFormatter.format(totalResidual),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 4),
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  const Text(
-                                    "Amount Payment",
-                                    style: TextStyle(
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.bold),
-                                  ),
-                                  Text(
-                                    currencyFormatter
-                                        .format(totalPartialPayment),
-                                    style: const TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              _buildTotalSummaryRow(
+                                  "Total Amount", totalAmount),
+                              // _buildTotalSummaryRow(
+                              //     "Total Residual", totalResidual),
+                              _buildTotalSummaryRow(
+                                  "Amount Payment", totalPartialPayment),
                             ],
                           ),
                         ),

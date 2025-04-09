@@ -94,6 +94,9 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
             .where((quotation) =>
                 (quotation['name']?.toString().toLowerCase() ?? '')
                     .contains(query.toLowerCase()) ||
+                (quotation['partner_invoice_id']?.toString().toLowerCase() ??
+                        '')
+                    .contains(query.toLowerCase()) ||
                 (quotation['partner_id']?[1]?.toString().toLowerCase() ?? '')
                     .contains(query.toLowerCase()) ||
                 (quotation['partner_shipping_id']?[1]
@@ -124,6 +127,7 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
     final name = item['name'] ?? 'No Name';
     final customer = item['partner_id']?[1] ?? '-';
     final shippingAddress = item['partner_shipping_id']?[1] ?? '-';
+    final invoiceAddress = item['partner_invoice_id']?[1] ?? '-';
     final dateOrder =
         item['date_order']?.split(' ')[0] ?? 'Unknown'; // Format tanggal
     // final totalPrice = item['amount_total'] ?? 0.0; // Total price
@@ -237,17 +241,26 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
                     ),
                   ],
                 ),
-                const TableRow(
+                TableRow(
                   children: [
-                    SizedBox(height: 2), // Jarak antar baris
-                    SizedBox(),
-                    SizedBox(),
+                    const Text(
+                      "Invoice address",
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    const Text(
+                      " :",
+                      style: TextStyle(fontSize: 12),
+                    ),
+                    Text(
+                      invoiceAddress,
+                      style: const TextStyle(fontSize: 12),
+                    ),
                   ],
                 ),
                 TableRow(
                   children: [
                     const Text(
-                      "Delivery addr",
+                      "Delivery address",
                       style: TextStyle(fontSize: 12),
                     ),
                     const Text(

@@ -69,23 +69,25 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
 
   Future<void> _loadOrderLines() async {
     try {
-      final data = await quotationDetails; // Ambil detail quotation
+      final data = await quotationDetails;
       final orderLineIds = List<int>.from(data['order_line'] ?? []);
       final fetchedOrderLines =
           await widget.odooService.fetchOrderLines(orderLineIds);
 
       setState(() {
-        // Data awal untuk tampilan normal
-        orderLines = Future.value(fetchedOrderLines);
+        tempOrderLines = fetchedOrderLines
+            .map((line) => {
+                  ...line,
+                  'original_price': line['price_unit'],
+                })
+            .toList();
 
-        // Salin ke tempOrderLines untuk mode edit
-        tempOrderLines = List<Map<String, dynamic>>.from(fetchedOrderLines);
-
-        // Inisialisasi pengontrol untuk mode edit
+        // Reinitialize controllers with the NEW tempOrderLines length
         _quantityControllers = tempOrderLines
             .map((line) =>
                 TextEditingController(text: line['product_uom_qty'].toString()))
             .toList();
+
         _priceControllers = tempOrderLines
             .map((line) => TextEditingController(
                 text: line['price_unit'].toStringAsFixed(2)))
@@ -251,8 +253,87 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
 
   Future<void> _saveChanges() async {
     try {
+      // Validasi harga sebelum menyimpan
+      bool isValid = true;
+      List<String> errorMessages = [];
+
+      for (int i = 0; i < tempOrderLines.length; i++) {
+        final currentLine = tempOrderLines[i];
+        final originalPrice =
+            currentLine['original_price'] ?? currentLine['price_unit'];
+        final currentPrice = currentLine['price_unit'];
+
+        if (currentPrice < originalPrice) {
+          isValid = false;
+          errorMessages.add(
+            'The price for "${currentLine['name']}" cannot be lower than the normal price (${currencyFormatter.format(originalPrice)}).',
+          );
+        }
+      }
+
+      // Jika ada harga yang lebih rendah, tampilkan pop-up error
+      if (!isValid) {
+        showDialog(
+          context: context,
+          builder: (context) {
+            return Dialog(
+              backgroundColor: Colors.red, // Background merah
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8), // Border radius
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error,
+                      color: Colors.white,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      "Error",
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      errorMessages.join('\n'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 14,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.of(context).pop(); // Tutup dialog
+                      },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.red,
+                      ),
+                      child: const Text("OK"),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+        return; // Batalkan proses penyimpanan
+      }
+
+      // Simpan perubahan ke backend jika semua harga valid
       await widget.odooService
           .updateOrderLines(widget.quotationId, tempOrderLines);
+
+      // Hapus baris yang ditandai untuk dihapus
       for (final id in deletedOrderLines) {
         await widget.odooService.deleteOrderLine(id);
       }
@@ -280,33 +361,64 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
         'product_id': product['product_id'],
         'name': product['name'],
         'product_uom_qty': 1,
-        'price_unit': product['price_unit'],
+        'price_unit': product['list_price'], // Harga awal
+        'original_price':
+            product['list_price'], // Simpan harga normal sebagai referensi
       });
-
-      // Tambahkan controller baru untuk produk yang ditambahkan
       _quantityControllers.add(TextEditingController(text: '1'));
       _priceControllers.add(TextEditingController(
-          text: product['price_unit'].toStringAsFixed(2)));
+          text: product['list_price'].toStringAsFixed(2)));
     });
   }
 
-  void _updateLinePrice(int index, String newPrice) {
-    final parsedPrice =
-        double.tryParse(newPrice) ?? tempOrderLines[index]['price_unit'];
-    setState(() {
-      tempOrderLines[index]['price_unit'] = parsedPrice;
-      _priceControllers[index].text = parsedPrice.toStringAsFixed(2);
-    });
-  }
+  // void _updateLinePrice(int index, String newPrice) {
+  //   final currentLine = tempOrderLines[index];
+  //   final originalPrice =
+  //       currentLine['original_price'] ?? currentLine['price_unit'];
+  //   final parsedPrice = double.tryParse(newPrice) ?? currentLine['price_unit'];
 
-  void _updateLineQuantity(int index, String newQty) {
-    final parsedQty =
-        int.tryParse(newQty) ?? tempOrderLines[index]['product_uom_qty'];
-    setState(() {
-      tempOrderLines[index]['product_uom_qty'] = parsedQty;
-      _quantityControllers[index].text = parsedQty.toString();
-    });
-  }
+  //   if (parsedPrice < originalPrice) {
+  //     // Show a dialog warning about minimum price
+  //     showDialog(
+  //       context: context,
+  //       builder: (BuildContext context) {
+  //         return AlertDialog(
+  //           title: const Text('Price Validation'),
+  //           content: Text(
+  //             'Price cannot be lower than the original price of ${currencyFormatter.format(originalPrice)}.',
+  //             style: const TextStyle(fontSize: 14),
+  //           ),
+  //           actions: <Widget>[
+  //             TextButton(
+  //               child: const Text('OK'),
+  //               onPressed: () {
+  //                 Navigator.of(context).pop();
+  //                 // Reset the price controller to the original price
+  //                 _priceControllers[index].text =
+  //                     originalPrice.toStringAsFixed(2);
+  //               },
+  //             ),
+  //           ],
+  //         );
+  //       },
+  //     );
+  //     return;
+  //   }
+
+  //   setState(() {
+  //     tempOrderLines[index]['price_unit'] = parsedPrice;
+  //     _priceControllers[index].text = parsedPrice.toStringAsFixed(2);
+  //   });
+  // }
+
+  // void _updateLineQuantity(int index, String newQty) {
+  //   final parsedQty =
+  //       int.tryParse(newQty) ?? tempOrderLines[index]['product_uom_qty'];
+  //   setState(() {
+  //     tempOrderLines[index]['product_uom_qty'] = parsedQty;
+  //     _quantityControllers[index].text = parsedQty.toString();
+  //   });
+  // }
 
   void _removeLine(int index) {
     setState(() {
@@ -321,26 +433,26 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     });
   }
 
-  void _toggleEditMode() {
-    setState(() {
-      isEditLineMode = !isEditLineMode;
-      if (isEditLineMode) {
-        // Masuk ke mode edit: Salin data ke editOrderLines
-        editOrderLines = List<Map<String, dynamic>>.from(tempOrderLines);
-      } else {
-        // Keluar mode edit: Kembalikan data dari editOrderLines
-        tempOrderLines = List<Map<String, dynamic>>.from(editOrderLines);
-        _quantityControllers = tempOrderLines
-            .map((line) =>
-                TextEditingController(text: line['product_uom_qty'].toString()))
-            .toList();
-        _priceControllers = tempOrderLines
-            .map((line) => TextEditingController(
-                text: line['price_unit'].toStringAsFixed(2)))
-            .toList();
-      }
-    });
-  }
+  // void _toggleEditMode() {
+  //   setState(() {
+  //     isEditLineMode = !isEditLineMode;
+  //     if (isEditLineMode) {
+  //       // Masuk ke mode edit: Salin data ke editOrderLines
+  //       editOrderLines = List<Map<String, dynamic>>.from(tempOrderLines);
+  //     } else {
+  //       // Keluar mode edit: Kembalikan data dari editOrderLines
+  //       tempOrderLines = List<Map<String, dynamic>>.from(editOrderLines);
+  //       _quantityControllers = tempOrderLines
+  //           .map((line) =>
+  //               TextEditingController(text: line['product_uom_qty'].toString()))
+  //           .toList();
+  //       _priceControllers = tempOrderLines
+  //           .map((line) => TextEditingController(
+  //               text: line['price_unit'].toStringAsFixed(2)))
+  //           .toList();
+  //     }
+  //   });
+  // }
 
   void _updateQuantity(int index, int delta) {
     setState(() {
@@ -423,8 +535,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
   void _cancelEditMode() {
     setState(() {
       isEditLineMode = false;
-      // Kembalikan data dari editOrderLines
-      tempOrderLines = List<Map<String, dynamic>>.from(editOrderLines);
+      tempOrderLines = List.from(editOrderLines); // Use saved copy
       _quantityControllers = tempOrderLines
           .map((line) =>
               TextEditingController(text: line['product_uom_qty'].toString()))
@@ -528,6 +639,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             final customerName = data['partner_id']?[1] ?? 'Unknown';
             final deliveryAddress =
                 data['partner_shipping_id']?[1] ?? 'Unknown';
+            final invoiceAddress = data['partner_invoice_id']?[1] ?? 'Unknown';
             final dateOrder = data['date_order'] ?? 'Unknown';
             final vat = (data['vat'] is String && data['vat']!.isNotEmpty)
                 ? data['vat']
@@ -535,6 +647,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             final orderLineIds = List<int>.from(data['order_line'] ?? []);
             final untaxedAmount = data['amount_untaxed'] ?? 0.0;
             final totalCost = data['amount_total'] ?? 0.0;
+            final totalTax = totalCost - untaxedAmount;
             final state = data['state'] ?? 'Unknown';
             orderLines = widget.odooService.fetchOrderLines(orderLineIds);
 
@@ -599,7 +712,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                       TableRow(
                         children: [
                           const Text(
-                            'Delivery Address',
+                            'Invoice Address',
                             style: TextStyle(fontSize: 12),
                           ),
                           const Text(
@@ -607,7 +720,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                             style: TextStyle(fontSize: 12),
                           ),
                           Text(
-                            deliveryAddress,
+                            invoiceAddress,
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
@@ -624,6 +737,22 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                           ),
                           Text(
                             vat,
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
+                      TableRow(
+                        children: [
+                          const Text(
+                            'Delivery Address',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            ' :',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            deliveryAddress,
                             style: const TextStyle(fontSize: 12),
                           ),
                         ],
@@ -787,6 +916,10 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                         ? ListView.builder(
                             itemCount: tempOrderLines.length,
                             itemBuilder: (context, index) {
+                              if (index >= _priceControllers.length ||
+                                  index >= tempOrderLines.length) {
+                                return SizedBox();
+                              }
                               final line = tempOrderLines[index];
                               final name = line['name'] ?? 'No Description';
 
@@ -931,8 +1064,10 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                 itemBuilder: (context, index) {
                                   final line = lines[index];
                                   final qty = line['product_uom_qty'] ?? 0;
+                                  final taxName = line['tax_name'] ?? 'No Tax';
                                   final price = line['price_unit'] ?? 0.0;
-                                  final subtotal = qty * price;
+                                  final subtotal =
+                                      line['price_subtotal'] ?? 0.0;
                                   final productImageBase64 = line[
                                       'image_1920']; // Gambar produk dalam base64
 
@@ -1016,6 +1151,25 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                             TableRow(
                                               children: [
                                                 const Text(
+                                                  'Taxes',
+                                                  style:
+                                                      TextStyle(fontSize: 12),
+                                                ),
+                                                const Text(
+                                                  ' : ',
+                                                  style:
+                                                      TextStyle(fontSize: 12),
+                                                ),
+                                                Text(
+                                                  taxName.toString(),
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
+                                                ),
+                                              ],
+                                            ),
+                                            TableRow(
+                                              children: [
+                                                const Text(
                                                   'Subtotal',
                                                   style:
                                                       TextStyle(fontSize: 12),
@@ -1063,6 +1217,24 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                 ),
                                 Text(
                                   currencyFormatter.format(untaxedAmount),
+                                  style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 4),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                const Text(
+                                  'PPN:',
+                                  style: TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold),
+                                ),
+                                Text(
+                                  currencyFormatter.format(totalTax),
                                   style: const TextStyle(
                                       fontSize: 14,
                                       fontWeight: FontWeight.bold),

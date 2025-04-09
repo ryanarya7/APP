@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final odooService = OdooService('https://jlm17.alphasoft.co.id/');
+    final odooService = OdooService('https://bpa.alphasoft.co.id/');
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,

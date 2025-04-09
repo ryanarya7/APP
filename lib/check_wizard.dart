@@ -6,8 +6,7 @@ class CheckWizardDialog extends StatefulWidget {
   final int invoiceId;
   final String invoiceName;
   final double initialAmount;
-  final String
-      partnerId; // Tambahkan partner ID untuk menentukan domain checkbook
+  final String partnerId;
 
   const CheckWizardDialog({
     super.key,
@@ -27,39 +26,32 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
   bool isChecked = false;
   double amountTotal = 0;
   String? receiptVia;
-  int? selectedCheckbookId;
-  List<Map<String, dynamic>> checkbooks = [];
 
   @override
   void initState() {
     super.initState();
-    amountTotal = widget.initialAmount;
-    _fetchCheckbooks();
-  }
-
-  Future<void> _fetchCheckbooks() async {
-    try {
-      final fetchedCheckbooks =
-          await widget.odooService.fetchCheckbooks(widget.partnerId);
-      setState(() {
-        checkbooks = fetchedCheckbooks;
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error fetching checkbooks: $e')),
-      );
-    }
+    amountTotal = widget.initialAmount > 0 ? widget.initialAmount : 0;
   }
 
   Future<void> _confirmCheck() async {
     try {
+      // Validasi form
+      if (!_formKey.currentState!.validate()) {
+        return;
+      }
+
+      // Simpan nilai form
+      _formKey.currentState!.save();
+
       // Create the wizard record
       final wizardId = await widget.odooService.createPaymentWizard(
         invoiceId: widget.invoiceId,
         isCheck: isChecked,
-        amount: amountTotal,
-        receiptVia: receiptVia,
-        checkbookId: selectedCheckbookId,
+        amount:
+            amountTotal, // Kirim nilai amountTotal apa pun kondisi isChecked
+        receiptVia: receiptVia ??
+            '', // Kirim nilai receiptVia apa pun kondisi isChecked
+        checkbookId: null, // Selalu kirim null untuk checkbookId
       );
 
       // Confirm the wizard
@@ -67,9 +59,32 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
 
       Navigator.of(context).pop(true); // Indicate success
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
+      // Tangkap pesan kesalahan dari backend
+      String errorMessage = e.toString();
+
+      // Jika pesan kesalahan spesifik, tampilkan pop-up
+      if (errorMessage.contains('Amount Residual Dalam Giro Tidak Cukup')) {
+        showDialog(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('Error'),
+              content: const Text('Amount Residual Dalam Giro Tidak Cukup'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('OK'),
+                ),
+              ],
+            );
+          },
+        );
+      } else {
+        // Untuk kesalahan lain, gunakan SnackBar
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $errorMessage')),
+        );
+      }
     }
   }
 
@@ -97,8 +112,11 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
                 decoration: const InputDecoration(labelText: 'Amount'),
                 keyboardType: TextInputType.number,
                 validator: (value) {
-                  final double? parsed = double.tryParse(value ?? '');
-                  if (parsed == null || parsed <= 0) {
+                  if (value == null || value.isEmpty) {
+                    return 'Amount is required';
+                  }
+                  final double? parsed = double.tryParse(value);
+                  if (parsed == null || parsed < 0) {
                     return 'Enter a valid amount';
                   }
                   return null;
@@ -110,51 +128,28 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
               DropdownButtonFormField<String>(
                 decoration: const InputDecoration(labelText: 'Receipt Via'),
                 items: const [
+                  DropdownMenuItem(value: '', child: Text('')),
                   DropdownMenuItem(value: 'cash', child: Text('Cash')),
                   DropdownMenuItem(value: 'giro', child: Text('Giro')),
+                  DropdownMenuItem(value: 'transfer', child: Text('Transfer')),
                 ],
                 value: receiptVia,
                 onChanged: (value) {
                   setState(() {
                     receiptVia = value;
-                    if (value != 'giro') {
-                      selectedCheckbookId =
-                          null; // Reset checkbook if receiptVia changes
-                    }
                   });
                 },
                 validator: (value) {
-                  if (value == null) return 'Select a receipt method';
+                  if (isChecked) {
+                    // Mandatory jika isChecked == true
+                    if (value == null || value.isEmpty) {
+                      return 'Receipt Via is required';
+                    }
+                  }
+                  // Tidak mandatory jika isChecked == false
                   return null;
                 },
               ),
-              if (receiptVia == 'giro' && checkbooks.isNotEmpty) ...[
-                const SizedBox(height: 8),
-                DropdownButtonFormField<int>(
-                  decoration: const InputDecoration(labelText: 'No Giro'),
-                  items: checkbooks.map<DropdownMenuItem<int>>((checkbook) {
-                    return DropdownMenuItem<int>(
-                      value: checkbook['id'] as int,
-                      child: Text(checkbook['name'] ?? 'Unnamed Giro'),
-                    );
-                  }).toList(),
-                  value: selectedCheckbookId,
-                  onChanged: (value) {
-                    setState(() {
-                      selectedCheckbookId = value;
-                    });
-                  },
-                  validator: (value) {
-                    if (receiptVia == 'giro' && value == null) {
-                      return 'Select a giro number';
-                    }
-                    return null;
-                  },
-                ),
-              ] else if (receiptVia == 'giro' && checkbooks.isEmpty) ...[
-                const SizedBox(height: 8),
-                const Text('No Giro available'),
-              ],
             ],
           ),
         ),

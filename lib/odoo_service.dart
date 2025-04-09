@@ -34,6 +34,7 @@ class OdooService {
     }
   }
 
+  // ignore: unused_element
   Future<void> _storeSession(OdooSession session) async {
     await _storage.write(key: _sessionKey, value: jsonEncode(session.toJson()));
   }
@@ -44,7 +45,7 @@ class OdooService {
           await const FlutterSecureStorage().read(key: _sessionKey);
       if (sessionData == null) return null;
       final session = OdooSession.fromJson(jsonDecode(sessionData));
-      final client = OdooClient('https://jlm17.alphasoft.co.id/', session);
+      final client = OdooClient('https://bpa.alphasoft.co.id/', session);
       try {
         await client.checkSession();
         return session;
@@ -417,6 +418,7 @@ class OdooService {
             'name',
             'partner_id',
             'partner_shipping_id',
+            'partner_invoice_id',
             'date_order',
             'amount_total',
             'state',
@@ -459,7 +461,8 @@ class OdooService {
             'warehouse_id',
             'date_order', // Quotation Date
             'amount_total',
-            'amount_untaxed', // Untaxed Amount
+            'amount_untaxed',
+            'tax_totals',
             'state',
             'user_member_id'
           ],
@@ -481,6 +484,7 @@ class OdooService {
       List<int> orderLineIds) async {
     await checkSession();
     try {
+      // Ambil data order lines
       final response = await _client.callKw({
         'model': 'sale.order.line',
         'method': 'read',
@@ -492,12 +496,64 @@ class OdooService {
             'product_uom_qty', // Quantity
             'price_unit', // Unit Price
             'price_subtotal', // Subtotal
+            'tax_id', // Taxes
             'product_uom', // UoM
             'display_type', // Display Type (for line_note)
           ],
         },
       });
-      return List<Map<String, dynamic>>.from(response);
+
+      // Casting respons ke List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> parsedResponse =
+          List<Map<String, dynamic>>.from(
+              response.map((item) => item as Map<String, dynamic>));
+
+      // Ekstrak semua ID pajak dari order lines
+      final taxIds = parsedResponse
+          .where((line) => line['tax_id'] is List && line['tax_id'].isNotEmpty)
+          .map((line) => line['tax_id'][0])
+          .toSet()
+          .toList();
+
+      // Ambil detail pajak dari model account.tax
+      final taxDetails = await _client.callKw({
+        'model': 'account.tax',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', 'in', taxIds]
+          ], // Filter berdasarkan ID pajak
+          'fields': ['id', 'display_name'], // Ambil ID dan nama pajak
+        },
+      });
+
+      // Casting taxDetails ke List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> parsedTaxDetails =
+          List<Map<String, dynamic>>.from(
+              taxDetails.map((item) => item as Map<String, dynamic>));
+
+      // Buat pemetaan ID pajak ke nama pajak
+      final taxNameMap = Map.fromEntries(
+        parsedTaxDetails.map((tax) {
+          return MapEntry(tax['id'], tax['display_name']);
+        }),
+      );
+
+      // Proses data order lines untuk menambahkan nama pajak
+      return parsedResponse.map((line) {
+        final taxId = line['tax_id'] is List && line['tax_id'].isNotEmpty
+            ? line['tax_id'][0]
+            : null; // Ambil ID pajak
+        final taxName =
+            taxId != null ? taxNameMap[taxId] : 'No Tax'; // Cari nama pajak
+
+        return {
+          ...line,
+          'tax_id': taxId, // Simpan ID pajak
+          'tax_name': taxName, // Simpan nama pajak
+        };
+      }).toList();
     } catch (e) {
       throw Exception('Failed to fetch order lines: $e');
     }
@@ -1054,20 +1110,19 @@ class OdooService {
       throw Exception('Failed to delete order line: $e');
     }
   }
-  
-  Future<void> callMethod(String model, String method, List<dynamic> args,
-    [Map<String, dynamic>? kwargs]) async {
-  await checkSession(); // Pastikan sesi masih aktif
-  try {
-    await _client.callKw({
-      'model': model,
-      'method': method,
-      'args': args,
-      'kwargs': kwargs ?? {},
-    });
-  } catch (e) {
-    throw Exception('RPC call failed: $e');
-  }
-}
 
+  Future<void> callMethod(String model, String method, List<dynamic> args,
+      [Map<String, dynamic>? kwargs]) async {
+    await checkSession(); // Pastikan sesi masih aktif
+    try {
+      await _client.callKw({
+        'model': model,
+        'method': method,
+        'args': args,
+        'kwargs': kwargs ?? {},
+      });
+    } catch (e) {
+      throw Exception('RPC call failed: $e');
+    }
+  }
 }

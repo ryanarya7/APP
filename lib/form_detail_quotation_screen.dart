@@ -111,12 +111,12 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     });
   }
 
-  void _updatePriceUnit(int index, String newPrice) {
-    setState(() {
-      quotationLines[index]['price_unit'] =
-          double.tryParse(newPrice) ?? quotationLines[index]['price_unit'];
-    });
-  }
+  // void _updatePriceUnit(int index, String newPrice) {
+  //   setState(() {
+  //     quotationLines[index]['price_unit'] =
+  //         double.tryParse(newPrice) ?? quotationLines[index]['price_unit'];
+  //   });
+  // }
 
   void _removeLine(int index) {
     setState(() {
@@ -125,13 +125,55 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
   }
 
   Future<void> _saveQuotationLines() async {
-    // Sinkronkan nilai dari controller ke quotationLines
+    // Validasi harga sebelum menyimpan
+    bool isPriceValid = true;
+    List<String> invalidPriceMessages = [];
+
     for (int index = 0; index < quotationLines.length; index++) {
-      quotationLines[index]['price_unit'] =
-          quotationLines[index]['price_controller'].numberValue;
+      // Sinkronkan nilai dari controller ke quotationLines
+      final currentLine = quotationLines[index];
+      final controllerValue = currentLine['price_controller'].numberValue;
+      final originalPrice = currentLine['price_unit'];
+
+      if (controllerValue < originalPrice) {
+        isPriceValid = false;
+        invalidPriceMessages.add(
+            'Produk ${currentLine['name']} tidak bisa diturunkan harganya. Harga minimal adalah ${currencyFormatter.format(originalPrice)}');
+      } else {
+        // Update price_unit dengan nilai dari controller
+        currentLine['price_unit'] = controllerValue;
+      }
+    }
+
+    // Jika ada harga yang tidak valid, tampilkan dialog
+    if (!isPriceValid) {
+      await showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Peringatan Harga'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: invalidPriceMessages
+                .map((message) => Text(
+                      message,
+                      style: const TextStyle(color: Colors.red),
+                    ))
+                .toList(),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Tutup'),
+            ),
+          ],
+        ),
+      );
+      return; // Hentikan proses penyimpanan
     }
 
     try {
+      // Proses penyimpanan jika semua harga valid
       for (var line in quotationLines) {
         await widget.odooService
             .addQuotationLine(widget.headerData['quotationId'], line);
