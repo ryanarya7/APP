@@ -7,6 +7,35 @@ class ProfileScreen extends StatelessWidget {
 
   const ProfileScreen({super.key, required this.odooService});
 
+  ImageProvider? _getImageProvider(dynamic imageData) {
+    if (imageData == null || imageData is! String || imageData.isEmpty) {
+      return null;
+    }
+
+    try {
+      // Clean the base64 string - remove potential padding or metadata
+      String cleanedImage = imageData.trim();
+
+      // If it contains a data URI prefix, remove it
+      if (cleanedImage.contains(';base64,')) {
+        cleanedImage = cleanedImage.split(';base64,')[1];
+      }
+
+      // Decode the base64 string
+      final imageBytes = base64Decode(cleanedImage);
+
+      // Return null if we have no actual image data
+      if (imageBytes.isEmpty) {
+        return null;
+      }
+
+      return MemoryImage(imageBytes);
+    } catch (e) {
+      debugPrint('Error processing profile image: $e');
+      return null;
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -85,11 +114,11 @@ class ProfileScreen extends StatelessWidget {
                       // Animated Avatar
                       CircleAvatar(
                         radius: 60,
-                        backgroundImage: (user['image_1920'] != null && user['image_1920'] is String)
-                            ? MemoryImage(base64Decode(user['image_1920']))
-                            : null,
-                        child: (user['image_1920'] == null || user['image_1920'] is! String)
-                            ? const Icon(Icons.person, size: 60, color: Colors.white)
+                        backgroundColor: Colors.blue[100],
+                        backgroundImage: _getImageProvider(user['image_1920']),
+                        child: _getImageProvider(user['image_1920']) == null
+                            ? const Icon(Icons.person,
+                                size: 60, color: Colors.blue)
                             : null,
                       ),
                       const SizedBox(height: 16),

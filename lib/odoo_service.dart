@@ -103,7 +103,7 @@ class OdooService {
             'qty_available',
             'default_code',
             'uom_id',
-            'company_id', // Ambil company/vendor name
+            'company_id',
           ],
         },
       });
@@ -182,6 +182,31 @@ class OdooService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchProductsTemplate() async {
+    await checkSession(); // Pastikan sesi valid sebelum fetch
+    try {
+      final response = await _client.callKw({
+        'model': 'product.template',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'fields': [
+            'id',
+            'name',
+            'list_price',
+            'image_1920',
+            'qty_available',
+            'default_code',
+            'categ_id', // Ambil category_id dari product.template
+          ],
+        },
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch products template: $e');
+    }
+  }
+
   Future<Map<String, dynamic>> fetchUser([String? username]) async {
     await checkSession(); // Pastikan session valid sebelum fetch
     final String userToFetch = username ?? currentUsername!;
@@ -189,19 +214,42 @@ class OdooService {
       final response = await _client.callKw({
         'model': 'res.users',
         'method': 'search_read',
-        'args': [],
+        'args': [
+          [
+            ['login', '=', userToFetch]
+          ] // Filter directly in the query
+        ],
         'kwargs': {
           'fields': ['name', 'login', 'image_1920'],
+          'limit': 1
         },
       });
 
-      final user = response.firstWhere(
-        (user) => user['login'] == userToFetch,
-        orElse: () =>
-            throw Exception('User not found for username: $userToFetch'),
-      );
+      if (response.isEmpty) {
+        throw Exception('User not found for username: $userToFetch');
+      }
 
-      return Map<String, dynamic>.from(user);
+      final user = Map<String, dynamic>.from(response.first);
+
+      // Process the image data if exists
+      if (user.containsKey('image_1920') && user['image_1920'] != false) {
+        // Ensure the image is properly formatted
+        try {
+          // The image should already be valid base64, but let's check
+          if (user['image_1920'] is String) {
+            // We keep it as is, but we could do additional validation here
+          } else {
+            // If it's not a string, remove it to avoid errors
+            user['image_1920'] = null;
+          }
+        } catch (e) {
+          user['image_1920'] = null; // Reset image on error
+        }
+      } else {
+        user['image_1920'] = null; // Ensure null for non-existent images
+      }
+
+      return user;
     } catch (e) {
       throw Exception('Failed to fetch user data: $e');
     }
@@ -271,7 +319,7 @@ class OdooService {
         'method': 'search_read',
         'args': [],
         'kwargs': {
-          'fields': ['id', 'name'],
+          'fields': ['id', 'name', 'lot_stock_id'],
         },
       });
       return List<Map<String, dynamic>>.from(response);
@@ -336,27 +384,52 @@ class OdooService {
   }
 
   // Add a line to an existing quotation
-  Future<void> addQuotationLine(
-      int quotationId, Map<String, dynamic> lineData) async {
-    await checkSession();
+  // In your odoo_service.dart file, add or update the following method:
+  Future<int> addQuotationLine(
+      int orderId, Map<String, dynamic> lineData) async {
     try {
-      final linePayload = {
-        'order_id': quotationId,
-        'product_id': lineData['product_id'],
-        'product_template_id': lineData['product_template_id'],
-        'product_uom_qty': lineData['product_uom_qty'],
-        'product_uom': lineData['product_uom'],
-        'price_unit': lineData['price_unit'],
-        'name': lineData['name'], // Deskripsi produk
-      };
+      // Ensure the session is active
+      await checkSession();
 
-      await _client.callKw({
+      Map<String, dynamic> values = {};
+
+      // If it's a note line
+      if (lineData['display_type'] == 'line_note') {
+        // For note lines, only send these required fields
+        values = {
+          'order_id': orderId,
+          'display_type': 'line_note', // This is critical
+          'name': lineData['name'],
+          // No product_id, product_uom, or other accountable fields needed
+        };
+      } else {
+        // For regular product lines
+        values = {
+          'order_id': orderId,
+          'product_id': lineData['product_id'],
+          'name': lineData['name'],
+          'product_uom_qty': lineData['product_uom_qty'],
+          'product_uom': lineData['product_uom'],
+          'price_unit': lineData['price_unit'],
+        };
+
+        // Add product_template_id if it exists in the lineData
+        if (lineData.containsKey('product_template_id')) {
+          values['product_template_id'] = lineData['product_template_id'];
+        }
+      }
+
+      // Use OdooRPC client to create the sale order line
+      final response = await _client.callKw({
         'model': 'sale.order.line',
         'method': 'create',
-        'args': [linePayload],
+        'args': [values],
         'kwargs': {},
       });
+
+      return response;
     } catch (e) {
+      print('Error adding quotation line: $e');
       throw Exception('Failed to add quotation line: $e');
     }
   }
@@ -464,100 +537,145 @@ class OdooService {
             'amount_untaxed',
             'tax_totals',
             'state',
-            'user_member_id'
+            'user_member_id',
+            'notes', // Explicitly include the notes field
           ],
           'limit': 1, // Fetch only one record
         },
       });
-
       if (response.isEmpty) {
         throw Exception('Quotation not found with ID: $quotationId');
       }
-
-      return Map<String, dynamic>.from(response[0]);
+      // Handle missing or empty notes field
+      final quotation = Map<String, dynamic>.from(response[0]);
+      quotation['notes'] =
+          (quotation['notes'] == false || quotation['notes'] == null)
+              ? '' // Replace `false` or `null` with an empty string
+              : quotation['notes'].toString(); // Ensure notes is a string
+      return quotation;
     } catch (e) {
       throw Exception('Failed to fetch quotation by ID: $e');
     }
   }
 
   Future<List<Map<String, dynamic>>> fetchOrderLines(
-      List<int> orderLineIds) async {
-    await checkSession();
-    try {
-      // Ambil data order lines
-      final response = await _client.callKw({
-        'model': 'sale.order.line',
-        'method': 'read',
-        'args': [orderLineIds],
-        'kwargs': {
-          'fields': [
-            'product_id', // Product
-            'name', // Description
-            'product_uom_qty', // Quantity
-            'price_unit', // Unit Price
-            'price_subtotal', // Subtotal
-            'tax_id', // Taxes
-            'product_uom', // UoM
-            'display_type', // Display Type (for line_note)
-          ],
-        },
-      });
+    List<int> orderLineIds) async {
+  await checkSession();
+  try {
+    // Ambil data order lines
+    final response = await _client.callKw({
+      'model': 'sale.order.line',
+      'method': 'read',
+      'args': [orderLineIds],
+      'kwargs': {
+        'fields': [
+          'product_id', // Product
+          'name', // Description
+          'product_uom_qty', // Quantity
+          'price_unit', // Unit Price
+          'price_subtotal', // Subtotal
+          'price_total', // Total
+          'tax_id', // Taxes
+          'product_uom', // UoM
+          'display_type', // Display Type (for line_note)
+        ],
+      },
+    });
 
-      // Casting respons ke List<Map<String, dynamic>>
-      final List<Map<String, dynamic>> parsedResponse =
-          List<Map<String, dynamic>>.from(
-              response.map((item) => item as Map<String, dynamic>));
+    // Casting respons ke List<Map<String, dynamic>>
+    final List<Map<String, dynamic>> parsedResponse =
+        List<Map<String, dynamic>>.from(
+            response.map((item) => item as Map<String, dynamic>));
 
-      // Ekstrak semua ID pajak dari order lines
-      final taxIds = parsedResponse
-          .where((line) => line['tax_id'] is List && line['tax_id'].isNotEmpty)
-          .map((line) => line['tax_id'][0])
-          .toSet()
-          .toList();
+    // Ekstrak semua ID pajak dari order lines
+    final taxIds = parsedResponse
+        .where((line) => line['tax_id'] is List && line['tax_id'].isNotEmpty)
+        .map((line) => line['tax_id'][0])
+        .toSet()
+        .toList();
 
-      // Ambil detail pajak dari model account.tax
-      final taxDetails = await _client.callKw({
-        'model': 'account.tax',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'domain': [
-            ['id', 'in', taxIds]
-          ], // Filter berdasarkan ID pajak
-          'fields': ['id', 'display_name'], // Ambil ID dan nama pajak
-        },
-      });
+    // Ambil detail pajak dari model account.tax
+    final taxDetails = await _client.callKw({
+      'model': 'account.tax',
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'domain': [
+          ['id', 'in', taxIds]
+        ], // Filter berdasarkan ID pajak
+        'fields': ['id', 'display_name'], // Ambil ID dan nama pajak
+      },
+    });
 
-      // Casting taxDetails ke List<Map<String, dynamic>>
-      final List<Map<String, dynamic>> parsedTaxDetails =
-          List<Map<String, dynamic>>.from(
-              taxDetails.map((item) => item as Map<String, dynamic>));
+    // Casting taxDetails ke List<Map<String, dynamic>>
+    final List<Map<String, dynamic>> parsedTaxDetails =
+        List<Map<String, dynamic>>.from(
+            taxDetails.map((item) => item as Map<String, dynamic>));
 
-      // Buat pemetaan ID pajak ke nama pajak
-      final taxNameMap = Map.fromEntries(
-        parsedTaxDetails.map((tax) {
-          return MapEntry(tax['id'], tax['display_name']);
-        }),
-      );
+    // Buat pemetaan ID pajak ke nama pajak
+    final taxNameMap = Map.fromEntries(
+      parsedTaxDetails.map((tax) {
+        return MapEntry(tax['id'], tax['display_name']);
+      }),
+    );
 
-      // Proses data order lines untuk menambahkan nama pajak
-      return parsedResponse.map((line) {
-        final taxId = line['tax_id'] is List && line['tax_id'].isNotEmpty
-            ? line['tax_id'][0]
-            : null; // Ambil ID pajak
-        final taxName =
-            taxId != null ? taxNameMap[taxId] : 'No Tax'; // Cari nama pajak
+    // Ekstrak semua ID produk unik dari order lines
+    final productIds = parsedResponse
+        .where((line) => line['product_id'] is List && line['product_id'].isNotEmpty)
+        .map((line) => line['product_id'][0])
+        .toSet()
+        .toList();
 
-        return {
-          ...line,
-          'tax_id': taxId, // Simpan ID pajak
-          'tax_name': taxName, // Simpan nama pajak
-        };
-      }).toList();
-    } catch (e) {
-      throw Exception('Failed to fetch order lines: $e');
-    }
+    // Ambil data produk termasuk gambar dari model product.product
+    final productDetails = await _client.callKw({
+      'model': 'product.product',
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'domain': [
+          ['id', 'in', productIds]
+        ], // Filter berdasarkan ID produk
+        'fields': ['id', 'image_1920'], // Ambil ID dan gambar produk
+      },
+    });
+
+    // Casting productDetails ke List<Map<String, dynamic>>
+    final List<Map<String, dynamic>> parsedProductDetails =
+        List<Map<String, dynamic>>.from(
+            productDetails.map((item) => item as Map<String, dynamic>));
+
+    // Buat pemetaan ID produk ke gambar produk
+    final productImageMap = Map.fromEntries(
+      parsedProductDetails.map((product) {
+        return MapEntry(product['id'], product['image_1920']);
+      }),
+    );
+
+    // Proses data order lines untuk menambahkan nama pajak dan gambar produk
+    return parsedResponse.map((line) {
+      final taxId = line['tax_id'] is List && line['tax_id'].isNotEmpty
+          ? line['tax_id'][0]
+          : null; // Ambil ID pajak
+      final taxName =
+          taxId != null ? taxNameMap[taxId] : 'No Tax'; // Cari nama pajak
+
+      final productId = line['product_id'] is List && line['product_id'].isNotEmpty
+          ? line['product_id'][0]
+          : null; // Ambil ID produk
+      final productImage =
+          productId != null ? productImageMap[productId] : null; // Cari gambar produk
+
+      return {
+        ...line,
+        'tax_id': taxId, // Simpan ID pajak
+        'tax_name': taxName, // Simpan nama pajak
+        'image_1920': productImage, // Simpan gambar produk
+      };
+    }).toList();
+  } catch (e) {
+    throw Exception('Failed to fetch order lines: $e');
   }
+}
 
   Future<List<Map<String, dynamic>>> fetchCustomerAddresses(
       int customerId) async {
@@ -1111,6 +1229,270 @@ class OdooService {
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchGiroBook() async {
+    await checkSession();
+
+    if (currentUsername == null) {
+      throw Exception('User is not logged in.');
+    }
+
+    try {
+      // Fetch the current user's ID based on their username
+      final responseUser = await _client.callKw({
+        'model': 'res.users',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['login', '=', currentUsername]
+          ],
+          'fields': ['id'],
+          'limit': 1,
+        },
+      });
+
+      if (responseUser.isEmpty) {
+        throw Exception('User not found.');
+      }
+
+      final userId = responseUser[0]['id']; // Get the user's ID
+
+      // Fetch giro book data filtered by the current user's ID
+      final response = await _client.callKw({
+        'model': 'account.checkbook',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['user_id', '=', userId] // Filter by the logged-in user's ID
+          ],
+          'fields': [
+            'name',
+            'date',
+            'payment_type',
+            'partner_id',
+            'user_id',
+            'total_check',
+            'residual_check',
+            'state',
+          ],
+          'order': 'date desc', // Sort by date in descending order
+        },
+      });
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch giro book: $e');
+    }
+  }
+
+  // Fetch Checkbook Header Details
+  Future<Map<String, dynamic>> fetchCheckBookById(int checkBookId) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'account.checkbook',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', '=', checkBookId]
+          ],
+          'fields': [
+            'name',
+            'date',
+            'payment_type',
+            'partner_id',
+            'user_id',
+            'state',
+            'total_check',
+            'residual_check',
+          ],
+          'limit': 1,
+        },
+      });
+      if (response.isEmpty) {
+        throw Exception('Checkbook not found with ID: $checkBookId');
+      }
+      return Map<String, dynamic>.from(response[0]);
+    } catch (e) {
+      throw Exception('Failed to fetch checkbook details: $e');
+    }
+  }
+
+// Fetch Checkbook Line Items
+  Future<List<Map<String, dynamic>>> fetchCheckBookLinesByCheckBookId(
+      int checkBookId) async {
+    await checkSession();
+    try {
+      // Fetch checkbook lines
+      final response = await _client.callKw({
+        'model': 'account.checkbook.line',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['checkbook_id', '=', checkBookId]
+          ],
+          'fields': [
+            'name',
+            'partner_bank_id',
+            'date',
+            'date_end',
+            'check_amount',
+            'check_residual',
+            'payment_ids',
+            'state',
+            'payment_status',
+          ],
+        },
+      });
+
+      // Process each line to fetch payment names
+      for (var line in response) {
+        final paymentIds = line['payment_ids'] as List<dynamic>? ?? [];
+        if (paymentIds.isNotEmpty) {
+          final paymentNames = await _fetchPaymentNames(paymentIds);
+          line['payment_names'] =
+              paymentNames.join(', '); // Combine names into a single string
+        } else {
+          line['payment_names'] = ''; // Default message if no payments
+        }
+      }
+
+      print(
+          'Fetched Check Book Lines with Payment Names: $response'); // Log the response
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch checkbook lines: $e');
+    }
+  }
+
+  Future<List<String>> _fetchPaymentNames(List<dynamic> paymentIds) async {
+    try {
+      final response = await _client.callKw({
+        'model': 'account.payment',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', 'in', paymentIds]
+          ],
+          'fields': ['name'], // Only fetch the 'name' field
+        },
+      });
+      return List<String>.from(response.map((payment) => payment['name']));
+    } catch (e) {
+      throw Exception('Failed to fetch payment names: $e');
+    }
+  }
+
+  // Future<Map<String, dynamic>> fetchWarehouseDetails(int warehouseId) async {
+  //   await checkSession(); // Pastikan sesi valid
+  //   try {
+  //     final response = await _client.callKw({
+  //       'model': 'stock.warehouse',
+  //       'method': 'read',
+  //       'args': [
+  //         [warehouseId]
+  //       ],
+  //       'kwargs': {
+  //         'fields': ['lot_stock_id']
+  //       },
+  //     });
+
+  //     if (response.isEmpty || response[0]['lot_stock_id'] == null) {
+  //       throw Exception('Failed to fetch warehouse or lot_stock_id.');
+  //     }
+
+  //     return Map<String, dynamic>.from(response[0]);
+  //   } catch (e) {
+  //     throw Exception('Failed to fetch warehouse details: $e');
+  //   }
+  // }
+
+  // Future<List<Map<String, dynamic>>> fetchProductsByWarehouse(
+  //     int lotStockId) async {
+  //   await checkSession(); // Pastikan sesi valid
+  //   try {
+  //     // Ambil data dari stock.quant untuk produk dengan location_id == lot_stock_id
+  //     final quantResponse = await _client.callKw({
+  //       'model': 'stock.quant',
+  //       'method': 'search_read',
+  //       'args': [],
+  //       'kwargs': {
+  //         'domain': [
+  //           ['location_id', '=', lotStockId],
+  //         ],
+  //         'fields': ['product_id', 'inventory_quantity_auto_apply'],
+  //       },
+  //     });
+
+  //     // Group quantities by product_id
+  //     Map<int, double> productQuantities = {};
+
+  //     for (var quant in quantResponse) {
+  //       if (quant['product_id'] is List && quant['product_id'].isNotEmpty) {
+  //         final productId = quant['product_id'][0];
+  //         final qty = quant['inventory_quantity_auto_apply'] ?? 0;
+
+  //         // Sum up quantities for the same product
+  //         if (productQuantities.containsKey(productId)) {
+  //           productQuantities[productId] = productQuantities[productId]! + qty;
+  //         } else {
+  //           productQuantities[productId] = qty;
+  //         }
+  //       }
+  //     }
+
+  //     // Filter out products with non-positive quantities
+  //     final validProductIds = productQuantities.entries
+  //         .where((entry) => entry.value > 0)
+  //         .map((entry) => entry.key)
+  //         .toList();
+
+  //     if (validProductIds.isEmpty) {
+  //       return []; // Return empty list if no products found
+  //     }
+
+  //     // Ambil detail produk dari product.product berdasarkan product_ids
+  //     final productResponse = await _client.callKw({
+  //       'model': 'product.product',
+  //       'method': 'read',
+  //       'args': [validProductIds],
+  //       'kwargs': {
+  //         'fields': [
+  //           'id',
+  //           'name',
+  //           'default_code',
+  //           'list_price',
+  //           'image_1920',
+  //           'uom_id',
+  //         ],
+  //       },
+  //     });
+
+  //     // Create final products list with aggregated quantities
+  //     final List<Map<String, dynamic>> productsWithStock = [];
+
+  //     for (var product in productResponse) {
+  //       final productId = product['id'];
+  //       final qty = productQuantities[productId] ?? 0;
+
+  //       if (qty > 0) {
+  //         Map<String, dynamic> productWithStock =
+  //             Map<String, dynamic>.from(product);
+  //         productWithStock['qty_available'] = qty;
+  //         productsWithStock.add(productWithStock);
+  //       }
+  //     }
+
+  //     return productsWithStock;
+  //   } catch (e) {
+  //     throw Exception('Failed to fetch products by warehouse: $e');
+  //   }
+  // }
+
   Future<void> callMethod(String model, String method, List<dynamic> args,
       [Map<String, dynamic>? kwargs]) async {
     await checkSession(); // Pastikan sesi masih aktif
@@ -1123,6 +1505,257 @@ class OdooService {
       });
     } catch (e) {
       throw Exception('RPC call failed: $e');
+    }
+  }
+
+  Future<void> createNoteLine(int quotationId, String note) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'sale.order.line',
+        'method': 'create',
+        'args': [
+          {
+            'order_id': quotationId,
+            'display_type': 'line_note',
+            'name': note,
+            'product_uom_qty': 0, // Not needed for notes
+            'price_unit': 0, // Not needed for notes
+          },
+        ],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to create note line: $e');
+    }
+  }
+
+  Future<void> updateNoteLine(int lineId, String note) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'sale.order.line',
+        'method': 'write',
+        'args': [
+          [lineId],
+          {
+            'name': note,
+          },
+        ],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to update note line: $e');
+    }
+  }
+
+  Future<void> createProductLine(int quotationId, int productId, String name,
+      int quantity, double price) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'sale.order.line',
+        'method': 'create',
+        'args': [
+          {
+            'order_id': quotationId,
+            'product_id': productId,
+            'name': name,
+            'product_uom_qty': quantity,
+            'price_unit': price,
+          },
+        ],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to create product line: $e');
+    }
+  }
+
+  Future<void> updateProductLine(int lineId, int quantity, double price) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'sale.order.line',
+        'method': 'write',
+        'args': [
+          [lineId],
+          {
+            'product_uom_qty': quantity,
+            'price_unit': price,
+          },
+        ],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to update product line: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUsers() async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'res.users',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'fields': ['id', 'name', 'login', 'image_1920'],
+        },
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch users: $e');
+    }
+  }
+
+  Future<int> createCheckBook(Map<String, dynamic> checkBookData) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'account.checkbook',
+        'method': 'create',
+        'args': [checkBookData],
+        'kwargs': {},
+      });
+
+      return response;
+    } catch (e) {
+      throw Exception('Failed to create check book: $e');
+    }
+  }
+
+  Future<void> updateCheckBook(
+      int checkBookId, Map<String, dynamic> values) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'account.checkbook',
+        'method': 'write',
+        'args': [
+          [checkBookId], // ID must be in a list
+          values // Values to update
+        ],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to update check book: $e');
+    }
+  }
+
+  // Create a new checkbook line
+  Future<int> createCheckBookLine(
+      Map<String, dynamic> checkBookLineData) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'account.checkbook.line',
+        'method': 'create',
+        'args': [checkBookLineData],
+        'kwargs': {},
+      });
+      return response; // Return the ID of the newly created line
+    } catch (e) {
+      throw Exception('Failed to create checkbook line: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchCheckBookLine(int checkBookLineId) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'account.checkbook.line',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', '=', checkBookLineId]
+          ], // Filter by ID
+          'fields': [
+            'name', // Giro number
+            'date', // Giro date
+            'date_end', // Giro expiry date
+            'check_amount', // Amount
+            'partner_bank_id', // Bank ID
+          ],
+          'limit': 1, // Fetch only one record
+        },
+      });
+      return response.isNotEmpty
+          ? Map<String, dynamic>.from(response.first)
+          : {};
+    } catch (e) {
+      throw Exception('Failed to fetch checkbook line details: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchBanks(int partnerId) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'res.partner.bank',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['partner_id', '=', partnerId], // Filter by partner_id
+            ['active', '=', true], // Only active banks
+          ],
+          'fields': [
+            'id', // Bank ID
+            'acc_number', // Bank Account Number
+            'bank_name', // Bank Name
+            'bank_bic', // Bank BIC/SWIFT Code
+            'currency_id', // Currency
+          ],
+        },
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      throw Exception('Failed to fetch banks: $e');
+    }
+  }
+
+  Future<void> updateCheckBookLine(
+      int lineId, Map<String, dynamic> values) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'account.checkbook.line',
+        'method': 'write',
+        'args': [lineId, values],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to update check book line: $e');
+    }
+  }
+
+  Future<void> deleteCheckBookLine(int lineId) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'account.checkbook.line',
+        'method': 'unlink',
+        'args': [lineId],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to delete check book line: $e');
+    }
+  }
+
+  Future<void> confirmGiroBook(int checkBookId) async {
+    await checkSession();
+    try {
+      await _client.callKw({
+        'model': 'account.checkbook',
+        'method': 'confirm_check',
+        'args': [checkBookId],
+        'kwargs': {},
+      });
+    } catch (e) {
+      throw Exception('Failed to confirm giro book: $e');
     }
   }
 }

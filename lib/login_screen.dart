@@ -29,8 +29,8 @@ class _LoginScreenState extends State<LoginScreen>
   void initState() {
     super.initState();
     _databaseController.text = 'bpa';
-    _usernameController.text = 'admin';
-    _passwordController.text = 'a';
+    _usernameController.text = '';
+    _passwordController.text = '';
 
     // Inisialisasi AnimationController untuk getar
     _shakeController = AnimationController(
@@ -83,10 +83,10 @@ class _LoginScreenState extends State<LoginScreen>
     } catch (e) {
       setState(() {
         _isError = true; // Set error state untuk animasi getar dan field merah
-        _errorMessage = "Invalid credentials or user not found. Please try again.";
+        _errorMessage =
+            "Invalid credentials or user not found. Please try again.";
         _isLoginSuccess = false; // Tetap tampilkan ikon default jika gagal
         print("Login error: $e");
-        
       });
 
       // Jalankan animasi getar pada field
@@ -149,7 +149,10 @@ class _LoginScreenState extends State<LoginScreen>
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: _isError
-                      ? [Colors.red[300]!, Colors.white] // Gradien merah dan putih saat error
+                      ? [
+                          Colors.red[300]!,
+                          Colors.white
+                        ] // Gradien merah dan putih saat error
                       : (_isLoading
                           ? [Colors.blue[300]!, Colors.green[700]!]
                           : [Colors.white, Colors.grey[700]!]),
@@ -330,7 +333,6 @@ class _LoginScreenState extends State<LoginScreen>
   }
 }
 
-
 class HelloScreen extends StatefulWidget {
   final String username;
   final OdooService odooService;
@@ -370,7 +372,8 @@ class _HelloScreenState extends State<HelloScreen> {
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => NavigationScreen(odooService: widget.odooService),
+            builder: (context) =>
+                NavigationScreen(odooService: widget.odooService),
           ),
         );
       });

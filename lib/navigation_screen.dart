@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'home_screen.dart';
-// import 'categories_screen.dart';
 import 'profile_screen.dart';
 import 'odoo_service.dart';
 import 'sale_order_list_screen.dart';
 import 'collection_screen.dart';
+import 'check_giro_screen.dart';
 
 class NavigationScreen extends StatefulWidget {
   final OdooService odooService;
@@ -26,12 +26,12 @@ class _NavigationScreenState extends State<NavigationScreen> {
   @override
   void initState() {
     super.initState();
-    _selectedIndex = widget.initialIndex; // Set default index
+    _selectedIndex = widget.initialIndex;
     _pages = [
       HomeScreen(odooService: widget.odooService),
-      // CategoriesScreen(odooService: widget.odooService),
       SaleOrderListScreen(odooService: widget.odooService),
       CollectionScreen(odooService: widget.odooService),
+      CheckGiroScreen(odooService: widget.odooService),
       ProfileScreen(odooService: widget.odooService),
     ];
   }
@@ -100,10 +100,10 @@ class _NavigationScreenState extends State<NavigationScreen> {
           },
           items: [
             _buildNavItem(Icons.home, "Home", 0),
-            // _buildNavItem(Icons.category, "Categories", 1),
             _buildNavItem(Icons.shopping_cart, "Sales Order", 1),
             _buildNavItem(Icons.attach_money, "Collection", 2),
-            _buildNavItem(Icons.person, "Profile", 3),
+            _buildNavItem(Icons.menu_book, "Check Giro", 3),
+            _buildNavItem(Icons.person, "Profile", 4),
           ],
         ),
       ),

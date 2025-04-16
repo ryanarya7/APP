@@ -29,12 +29,15 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
   late Future<String> deliveryOrderStatus;
   late Future<String> invoiceStatus;
   bool isEditLineMode = false;
+  Map<int, TextEditingController> _noteControllers = {};
+  String notes = '';
 
   @override
   void initState() {
     super.initState();
     _quantityControllers = [];
     _priceControllers = [];
+    _noteControllers = {};
     _loadQuotationDetails();
     quotationDetails =
         widget.odooService.fetchQuotationById(widget.quotationId);
@@ -79,8 +82,17 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             .map((line) => {
                   ...line,
                   'original_price': line['price_unit'],
+                  // Ensure product_id is properly stored as an integer
+                  'product_id': line['product_id'] is List
+                      ? line['product_id'][0]
+                      : line['product_id'],
                 })
             .toList();
+        _noteControllers.clear();
+
+        // Print for debugging
+        print(
+            'Loaded tempOrderLines product IDs: ${tempOrderLines.map((e) => e['product_id']).toList()}');
 
         // Reinitialize controllers with the NEW tempOrderLines length
         _quantityControllers = tempOrderLines
@@ -100,40 +112,40 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     }
   }
 
-  Future<void> _confirmQuotation() async {
-    try {
-      await widget.odooService.confirmQuotation(widget.quotationId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Quotation Confirmed Successfully!')),
-      );
-      setState(() {
-        // Reload quotation details after confirmation
-        quotationDetails =
-            widget.odooService.fetchQuotationById(widget.quotationId);
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error confirming quotation: $e')),
-      );
-    }
-  }
+  // Future<void> _confirmQuotation() async {
+  //   try {
+  //     await widget.odooService.confirmQuotation(widget.quotationId);
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text('Quotation Confirmed Successfully!')),
+  //     );
+  //     setState(() {
+  //       // Reload quotation details after confirmation
+  //       quotationDetails =
+  //           widget.odooService.fetchQuotationById(widget.quotationId);
+  //     });
+  //   } catch (e) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text('Error confirming quotation: $e')),
+  //     );
+  //   }
+  // }
 
-  Future<void> _cancelQuotation() async {
-    try {
-      await widget.odooService.cancelQuotation(widget.quotationId);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Quotation Cancelled Successfully!')),
-      );
-      setState(() {
-        quotationDetails =
-            widget.odooService.fetchQuotationById(widget.quotationId);
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error cancelling quotation: $e')),
-      );
-    }
-  }
+  // Future<void> _cancelQuotation() async {
+  //   try {
+  //     await widget.odooService.cancelQuotation(widget.quotationId);
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(content: Text('Quotation Cancelled Successfully!')),
+  //     );
+  //     setState(() {
+  //       quotationDetails =
+  //           widget.odooService.fetchQuotationById(widget.quotationId);
+  //     });
+  //   } catch (e) {
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(content: Text('Error cancelling quotation: $e')),
+  //     );
+  //   }
+  // }
 
   Future<void> _setToQuotation() async {
     try {
@@ -259,6 +271,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
 
       for (int i = 0; i < tempOrderLines.length; i++) {
         final currentLine = tempOrderLines[i];
+        if (currentLine['display_type'] == 'line_note') continue;
         final originalPrice =
             currentLine['original_price'] ?? currentLine['price_unit'];
         final currentPrice = currentLine['price_unit'];
@@ -330,8 +343,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
       }
 
       // Simpan perubahan ke backend jika semua harga valid
-      await widget.odooService
-          .updateOrderLines(widget.quotationId, tempOrderLines);
+      await _updateOrderLinesWithNotes();
 
       // Hapus baris yang ditandai untuk dihapus
       for (final id in deletedOrderLines) {
@@ -354,20 +366,107 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     }
   }
 
+  Future<void> _updateOrderLinesWithNotes() async {
+    for (final line in tempOrderLines) {
+      if (line['id'] == null) {
+        // Creating new line
+        if (line['display_type'] == 'line_note') {
+          // Create note line
+          await widget.odooService.createNoteLine(
+            widget.quotationId,
+            line['name'],
+          );
+        } else {
+          // Create product line
+          // Convert product_uom_qty to int explicitly
+          final qty = line['product_uom_qty'] is double
+              ? (line['product_uom_qty'] as double).toInt()
+              : line['product_uom_qty'];
+
+          await widget.odooService.createProductLine(
+            widget.quotationId,
+            line['product_id'],
+            line['name'],
+            qty, // Using the converted integer value
+            line['price_unit'],
+          );
+        }
+      } else {
+        // Updating existing line
+        if (line['display_type'] == 'line_note') {
+          // Update note line - only name needs to be updated
+          await widget.odooService.updateNoteLine(
+            line['id'],
+            line['name'],
+          );
+        } else {
+          // Update product line
+          // Convert product_uom_qty to int explicitly
+          final qty = line['product_uom_qty'] is double
+              ? (line['product_uom_qty'] as double).toInt()
+              : line['product_uom_qty'];
+
+          await widget.odooService.updateProductLine(
+            line['id'],
+            qty, // Using the converted integer value
+            line['price_unit'],
+          );
+        }
+      }
+    }
+  }
+
   void _addProduct(Map<String, dynamic> product) {
     setState(() {
-      tempOrderLines.add({
-        'id': null,
-        'product_id': product['product_id'],
-        'name': product['name'],
-        'product_uom_qty': 1,
-        'price_unit': product['list_price'], // Harga awal
-        'original_price':
-            product['list_price'], // Simpan harga normal sebagai referensi
-      });
-      _quantityControllers.add(TextEditingController(text: '1'));
-      _priceControllers.add(TextEditingController(
-          text: product['list_price'].toStringAsFixed(2)));
+      // Check if the product already exists in tempOrderLines
+      final productId = product['product_id'];
+
+      // Look for this product ID in the entire tempOrderLines array
+      final existingProductIndex =
+          tempOrderLines.indexWhere((line) => line['product_id'] == productId);
+
+      // If product already exists in order lines, update quantity
+      if (existingProductIndex != -1) {
+        // Get current quantity and add 1
+        final currentQty =
+            tempOrderLines[existingProductIndex]['product_uom_qty'] ?? 0;
+
+        // Update quantity
+        tempOrderLines[existingProductIndex]['product_uom_qty'] =
+            currentQty + 1;
+
+        // Update the quantity controller text
+        if (existingProductIndex < _quantityControllers.length) {
+          _quantityControllers[existingProductIndex].text =
+              (currentQty + 1).toString();
+        }
+
+        // Make sure we're comparing the correct product IDs by logging them
+        print(
+            'Added to existing product: ${productId} at index ${existingProductIndex}');
+        print(
+            'Current tempOrderLines products: ${tempOrderLines.map((e) => e['id']).toList()}');
+      } else {
+        // If product doesn't exist, add a new line
+        final price = product['price_unit'];
+
+        tempOrderLines.add({
+          'id': null,
+          'product_id': productId,
+          'name': product['name'],
+          'product_uom_qty': 1,
+          'price_unit': price,
+          'original_price': price,
+        });
+
+        // Add new controllers for the new line
+        _quantityControllers.add(TextEditingController(text: '1'));
+        _priceControllers.add(
+          TextEditingController(text: price.toStringAsFixed(2)),
+        );
+
+        print('Added new product: ${productId}');
+      }
     });
   }
 
@@ -457,10 +556,13 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
   void _updateQuantity(int index, int delta) {
     setState(() {
       final currentQty = tempOrderLines[index]['product_uom_qty'] ?? 0;
-      final newQty = currentQty + delta;
+      // Make sure we're working with int values
+      int intCurrentQty =
+          currentQty is double ? currentQty.toInt() : currentQty;
+      final newQty = intCurrentQty + delta;
 
       if (newQty > 0) {
-        tempOrderLines[index]['product_uom_qty'] = newQty;
+        tempOrderLines[index]['product_uom_qty'] = newQty; // Store as int
         _quantityControllers[index].text = newQty.toString();
       } else {
         _removeLine(index);
@@ -473,58 +575,100 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
       // Fetch daftar produk
       final products = await widget.odooService.fetchProducts();
 
-      // Filter hanya produk dengan qty_available > 0
-      final availableProducts = products.where((product) {
-        final qtyAvailable = product['qty_available'] ?? 0;
-        return qtyAvailable > 0;
-      }).toList();
+      // State lokal untuk pencarian
+      List<Map<String, dynamic>> filteredProducts = List.from(products);
+      final searchController = TextEditingController();
 
-      final result = await showDialog<Map<String, dynamic>>(
+      showDialog(
         context: context,
         builder: (context) {
           return AlertDialog(
             title: const Text(
               "Select Product",
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
             ),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: 400.0,
-              child: ListView.builder(
-                itemCount: availableProducts.length,
-                itemBuilder: (context, index) {
-                  final product = availableProducts[index];
-                  return ListTile(
-                    title: Text(product['name'],
-                        style: const TextStyle(fontSize: 12)),
-                    subtitle: Text(
-                      'Price: ${currencyFormatter.format(product['list_price'])}\n'
-                      'Available: ${product['qty_available']}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                    trailing: IconButton(
-                      icon: const Icon(Icons.add_circle, color: Colors.green),
-                      onPressed: () {
-                        Navigator.pop(context, {
-                          'id': null,
-                          'product_id': product['id'],
-                          'name': product['name'],
-                          'product_uom_qty': 1,
-                          'price_unit': product['list_price'],
-                        });
-                      },
-                    ),
-                  );
-                },
-              ),
+            content: StatefulBuilder(
+              builder: (context, setState) {
+                return SizedBox(
+                  width: double.maxFinite,
+                  height: 400.0,
+                  child: Column(
+                    children: [
+                      // Search TextField
+                      TextField(
+                        controller: searchController,
+                        decoration: const InputDecoration(
+                          labelText: 'Search Product',
+                          hintText: 'Enter product name or code',
+                          prefixIcon: Icon(Icons.search),
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (query) {
+                          setState(() {
+                            filteredProducts = products.where((product) {
+                              final nameMatch = product['name']
+                                  .toString()
+                                  .toLowerCase()
+                                  .contains(query.toLowerCase());
+                              final codeMatch = product['default_code'] != null
+                                  ? product['default_code']
+                                      .toString()
+                                      .toLowerCase()
+                                      .contains(query.toLowerCase())
+                                  : false;
+                              return nameMatch || codeMatch;
+                            }).toList();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      // Filtered Product List
+                      Expanded(
+                        child: ListView.builder(
+                          itemCount: filteredProducts.length,
+                          itemBuilder: (context, index) {
+                            final product = filteredProducts[index];
+                            return ListTile(
+                              title: Text(
+                                '[${product['default_code']}] ${product['name']}',
+                                style: const TextStyle(fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                'Price: ${currencyFormatter.format(product['list_price'] ?? 0.0)}\n'
+                                'Available: ${product['qty_available']}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.add_circle,
+                                    color: Colors.green),
+                                onPressed: () {
+                                  Navigator.of(context).pop({
+                                    'id': null,
+                                    'product_id': product['id'],
+                                    'name':
+                                        '[${product['default_code']}] ${product['name']}',
+                                    'product_uom_qty': 1,
+                                    'price_unit': product['list_price'],
+                                  });
+                                },
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
             ),
           );
         },
-      );
-
-      if (result != null) {
-        _addProduct(result);
-      }
+      ).then((result) {
+        if (result != null) {
+          _addProduct(result);
+        }
+        searchController.dispose(); // Dispose the search controller after use
+      });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading products: $e')),
@@ -535,7 +679,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
   void _cancelEditMode() {
     setState(() {
       isEditLineMode = false;
-      tempOrderLines = List.from(editOrderLines); // Use saved copy
+      tempOrderLines = List.from(editOrderLines);
       _quantityControllers = tempOrderLines
           .map((line) =>
               TextEditingController(text: line['product_uom_qty'].toString()))
@@ -544,6 +688,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
           .map((line) => TextEditingController(
               text: line['price_unit'].toStringAsFixed(2)))
           .toList();
+      _noteControllers.clear(); // Clear note controllers
     });
   }
 
@@ -555,14 +700,69 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     for (var controller in _priceControllers) {
       controller.dispose();
     }
+    _noteControllers.values.forEach((controller) => controller.dispose());
     super.dispose();
+  }
+
+  void _addLineNote() {
+    // Create a text controller for the note
+    final noteController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text(
+            "Add Note Line",
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+          ),
+          content: TextField(
+            controller: noteController,
+            decoration: const InputDecoration(
+              labelText: 'Note Content',
+              hintText: 'Enter your note here...',
+            ),
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (noteController.text.trim().isNotEmpty) {
+                  setState(() {
+                    tempOrderLines.add({
+                      'id': null,
+                      'display_type': 'line_note',
+                      'name': noteController.text,
+                      'product_uom_qty': 0, // Not needed for notes
+                      'price_unit': 0.0, // Not needed for notes
+                    });
+
+                    // Add dummy controllers to maintain index consistency
+                    _quantityControllers.add(TextEditingController(text: '0'));
+                    _priceControllers.add(TextEditingController(text: '0.0'));
+                  });
+                  Navigator.of(context).pop();
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     return WillPopScope(
       onWillPop: () async {
-        _navigateToSaleOrderList(); // Handle hardware back button
+        _navigateToSaleOrderList(); // Handle  hardware back button
         return false;
       },
       child: Scaffold(
@@ -587,11 +787,11 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                 final List<Widget> actions = [];
                 if (status == 'draft') {
                   actions.addAll([
-                    IconButton(
-                      icon: const Icon(Icons.check, color: Colors.white),
-                      onPressed: _confirmQuotation,
-                      tooltip: 'Confirm',
-                    ),
+                    // IconButton(
+                    //   icon: const Icon(Icons.check, color: Colors.white),
+                    //   onPressed: _confirmQuotation,
+                    //   tooltip: 'Confirm',
+                    // ),
                     IconButton(
                       icon: const Icon(Icons.edit, color: Colors.white),
                       onPressed: () async {
@@ -600,11 +800,11 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                       },
                       tooltip: 'Edit',
                     ),
-                    IconButton(
-                      icon: const Icon(Icons.close, color: Colors.white),
-                      onPressed: _cancelQuotation,
-                      tooltip: 'Cancel',
-                    ),
+                    // IconButton(
+                    //   icon: const Icon(Icons.close, color: Colors.white),
+                    //   onPressed: _cancelQuotation,
+                    //   tooltip: 'Cancel',
+                    // ),
                   ]);
                 }
                 if (status == 'cancel') {
@@ -641,6 +841,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                 data['partner_shipping_id']?[1] ?? 'Unknown';
             final invoiceAddress = data['partner_invoice_id']?[1] ?? 'Unknown';
             final dateOrder = data['date_order'] ?? 'Unknown';
+            final notes = data['notes'] ?? '';
             final vat = (data['vat'] is String && data['vat']!.isNotEmpty)
                 ? data['vat']
                 : '';
@@ -773,6 +974,22 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                           ),
                         ],
                       ),
+                      TableRow(
+                        children: [
+                          const Text(
+                            'Note',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          const Text(
+                            ' :',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                          Text(
+                            notes ?? '', // Ensure notes is always a string
+                            style: const TextStyle(fontSize: 12),
+                          ),
+                        ],
+                      ),
                       if (state != 'draft' && state != 'cancel')
                         TableRow(
                           children: [
@@ -886,6 +1103,12 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                               tooltip: 'Add Product',
                             ),
                             IconButton(
+                              icon: const Icon(Icons.note_add,
+                                  color: Colors.amber),
+                              onPressed: _addLineNote,
+                              tooltip: 'Add Note Line',
+                            ),
+                            IconButton(
                               icon: const Icon(Icons.save, color: Colors.green),
                               onPressed: _saveChanges,
                               tooltip: 'Save Changes',
@@ -922,121 +1145,169 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                               }
                               final line = tempOrderLines[index];
                               final name = line['name'] ?? 'No Description';
-
-                              return Card(
-                                margin:
-                                    const EdgeInsets.symmetric(vertical: 8.0),
-                                child: Padding(
-                                  padding: const EdgeInsets.all(8.0),
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        flex: 1,
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              name,
-                                              style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 12),
+                              final isNoteLine =
+                                  line['display_type'] == 'line_note';
+                              if (isNoteLine) {
+                                if (!_noteControllers.containsKey(index)) {
+                                  _noteControllers[index] =
+                                      TextEditingController(text: name);
+                                }
+                                return Card(
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 8.0),
+                                  color: Colors.amber[50],
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 3,
+                                          child: TextField(
+                                            controller: _noteControllers[index],
+                                            maxLines: 3,
+                                            decoration: const InputDecoration(
+                                              labelText: 'Note Content',
+                                              border: OutlineInputBorder(),
                                             ),
-                                            TextField(
-                                              controller:
-                                                  _priceControllers[index],
-                                              keyboardType:
-                                                  TextInputType.number,
-                                              decoration: const InputDecoration(
-                                                labelText: 'Price',
-                                                // border: OutlineInputBorder(),
-                                                // isDense: true,
-                                              ),
-                                              style:
-                                                  const TextStyle(fontSize: 12),
-                                              onChanged: (value) {
-                                                final parsedPrice =
-                                                    double.tryParse(value) ??
-                                                        tempOrderLines[index]
-                                                            ['price_unit'];
-                                                setState(() {
-                                                  tempOrderLines[index]
-                                                          ['price_unit'] =
-                                                      parsedPrice;
-                                                });
-                                              },
-                                            ),
-                                          ],
+                                            style:
+                                                const TextStyle(fontSize: 12),
+                                            onChanged: (value) {
+                                              setState(() {
+                                                tempOrderLines[index]['name'] =
+                                                    value;
+                                              });
+                                            },
+                                          ),
                                         ),
-                                      ),
-                                      Expanded(
-                                        flex: 1,
-                                        child: Row(
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                  Icons.remove_circle,
-                                                  color: Colors.red),
-                                              onPressed: () =>
-                                                  _updateQuantity(index, -1),
-                                            ),
-                                            Expanded(
-                                              child: TextField(
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: Colors.red),
+                                          onPressed: () => _removeLine(index),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              } else {
+                                return Card(
+                                  margin:
+                                      const EdgeInsets.symmetric(vertical: 8.0),
+                                  child: Padding(
+                                    padding: const EdgeInsets.all(8.0),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 1,
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                name,
+                                                style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 12),
+                                              ),
+                                              TextField(
                                                 controller:
-                                                    _quantityControllers[index],
+                                                    _priceControllers[index],
                                                 keyboardType:
                                                     TextInputType.number,
-                                                textAlign: TextAlign.center,
+                                                decoration:
+                                                    const InputDecoration(
+                                                  labelText: 'Price',
+                                                  // border: OutlineInputBorder(),
+                                                  // isDense: true,
+                                                ),
                                                 style: const TextStyle(
                                                     fontSize: 12),
-                                                // decoration:
-                                                //     const InputDecoration(
-                                                //   border: OutlineInputBorder(),
-                                                //   isDense: true,
-                                                // ),
                                                 onChanged: (value) {
-                                                  final parsedQty = int
-                                                          .tryParse(value) ??
-                                                      tempOrderLines[index]
-                                                          ['product_uom_qty'];
+                                                  final parsedPrice =
+                                                      double.tryParse(value) ??
+                                                          tempOrderLines[index]
+                                                              ['price_unit'];
                                                   setState(() {
-                                                    tempOrderLines[index][
-                                                            'product_uom_qty'] =
-                                                        parsedQty;
+                                                    tempOrderLines[index]
+                                                            ['price_unit'] =
+                                                        parsedPrice;
                                                   });
                                                 },
                                               ),
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(Icons.add_circle,
-                                                  color: Colors.green),
-                                              onPressed: () =>
-                                                  _updateQuantity(index, 1),
-                                            ),
-                                          ],
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red),
-                                        onPressed: () {
-                                          setState(() {
-                                            if (tempOrderLines[index]['id'] !=
-                                                null) {
-                                              deletedOrderLines.add(
-                                                  tempOrderLines[index]['id']);
-                                            }
-                                            tempOrderLines.removeAt(index);
-                                            _quantityControllers
-                                                .removeAt(index);
-                                            _priceControllers.removeAt(index);
-                                          });
-                                        },
-                                      ),
-                                    ],
+                                        Expanded(
+                                          flex: 1,
+                                          child: Row(
+                                            children: [
+                                              IconButton(
+                                                icon: const Icon(
+                                                    Icons.remove_circle,
+                                                    color: Colors.red),
+                                                onPressed: () =>
+                                                    _updateQuantity(index, -1),
+                                              ),
+                                              Expanded(
+                                                child: TextField(
+                                                  controller:
+                                                      _quantityControllers[
+                                                          index],
+                                                  keyboardType:
+                                                      TextInputType.number,
+                                                  textAlign: TextAlign.center,
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
+                                                  // decoration:
+                                                  //     const InputDecoration(
+                                                  //   border: OutlineInputBorder(),
+                                                  //   isDense: true,
+                                                  // ),
+                                                  onChanged: (value) {
+                                                    final parsedQty = int
+                                                            .tryParse(value) ??
+                                                        tempOrderLines[index]
+                                                            ['product_uom_qty'];
+                                                    setState(() {
+                                                      tempOrderLines[index][
+                                                              'product_uom_qty'] =
+                                                          parsedQty;
+                                                    });
+                                                  },
+                                                ),
+                                              ),
+                                              IconButton(
+                                                icon: const Icon(
+                                                    Icons.add_circle,
+                                                    color: Colors.green),
+                                                onPressed: () =>
+                                                    _updateQuantity(index, 1),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: Colors.red),
+                                          onPressed: () {
+                                            setState(() {
+                                              if (tempOrderLines[index]['id'] !=
+                                                  null) {
+                                                deletedOrderLines.add(
+                                                    tempOrderLines[index]
+                                                        ['id']);
+                                              }
+                                              tempOrderLines.removeAt(index);
+                                              _quantityControllers
+                                                  .removeAt(index);
+                                              _priceControllers.removeAt(index);
+                                            });
+                                          },
+                                        ),
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              );
+                                );
+                              }
                             },
                           )
                         : FutureBuilder<List<Map<String, dynamic>>>(
@@ -1060,140 +1331,164 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
 
                               final lines = lineSnapshot.data!;
                               return ListView.builder(
-                                itemCount: lines.length,
-                                itemBuilder: (context, index) {
-                                  final line = lines[index];
-                                  final qty = line['product_uom_qty'] ?? 0;
-                                  final taxName = line['tax_name'] ?? 'No Tax';
-                                  final price = line['price_unit'] ?? 0.0;
-                                  final subtotal =
-                                      line['price_subtotal'] ?? 0.0;
-                                  final productImageBase64 = line[
-                                      'image_1920']; // Gambar produk dalam base64
+                                  itemCount: lines.length,
+                                  itemBuilder: (context, index) {
+                                    final line = lines[index];
+                                    final isNoteLine =
+                                        line['display_type'] == 'line_note';
 
-                                  return Card(
-                                    margin: const EdgeInsets.symmetric(
-                                        vertical: 8.0),
-                                    child: ListTile(
-                                      leading: ClipRRect(
-                                        borderRadius: BorderRadius.circular(
-                                            8), // Membulatkan sudut gambar
-                                        child: productImageBase64 != null &&
-                                                productImageBase64 is String
-                                            ? Image.memory(
-                                                base64Decode(
-                                                    productImageBase64),
-                                                width: 50, // Lebar gambar
-                                                height: 50, // Tinggi gambar
-                                                fit: BoxFit.cover,
-                                                errorBuilder: (context, error,
-                                                    stackTrace) {
-                                                  return const Icon(
-                                                      Icons.broken_image,
-                                                      size: 50); // Jika error
-                                                },
-                                              )
-                                            : const Icon(
-                                                Icons.image_not_supported,
-                                                size: 50), // Placeholder
-                                      ),
-                                      title: Text(
-                                        line['name'] ?? 'No Description',
-                                        style: const TextStyle(fontSize: 12),
-                                      ),
-                                      subtitle: Padding(
-                                        padding: const EdgeInsets.only(top: 1),
-                                        child: Table(
-                                          columnWidths: const {
-                                            0: IntrinsicColumnWidth(),
-                                            1: FixedColumnWidth(12),
-                                          },
-                                          children: [
-                                            TableRow(
-                                              children: [
-                                                const Text(
-                                                  'Qty',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                const Text(
-                                                  ' : ',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                Text(
-                                                  qty.toString(),
-                                                  style: const TextStyle(
-                                                      fontSize: 12),
-                                                ),
-                                              ],
-                                            ),
-                                            TableRow(
-                                              children: [
-                                                const Text(
-                                                  'Price',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                const Text(
-                                                  ' : ',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                Text(
-                                                  currencyFormatter
-                                                      .format(price),
-                                                  style: const TextStyle(
-                                                      fontSize: 12),
-                                                ),
-                                              ],
-                                            ),
-                                            TableRow(
-                                              children: [
-                                                const Text(
-                                                  'Taxes',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                const Text(
-                                                  ' : ',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                Text(
-                                                  taxName.toString(),
-                                                  style: const TextStyle(
-                                                      fontSize: 12),
-                                                ),
-                                              ],
-                                            ),
-                                            TableRow(
-                                              children: [
-                                                const Text(
-                                                  'Subtotal',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                const Text(
-                                                  ' : ',
-                                                  style:
-                                                      TextStyle(fontSize: 12),
-                                                ),
-                                                Text(
-                                                  currencyFormatter
-                                                      .format(subtotal),
-                                                  style: const TextStyle(
-                                                      fontSize: 12),
-                                                ),
-                                              ],
-                                            ),
-                                          ],
+                                    if (isNoteLine) {
+                                      // Custom card for note lines
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(
+                                            vertical: 8.0),
+                                        color: Colors.amber[
+                                            50], // Light amber color for notes
+                                        child: Padding(
+                                          padding: const EdgeInsets.all(12.0),
+                                          child: Text(
+                                            line['name'] ?? 'No Note',
+                                            style:
+                                                const TextStyle(fontSize: 12),
+                                          ),
                                         ),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              );
+                                      );
+                                    } else {
+                                      // Original product line card
+                                      final qty = line['product_uom_qty'] ?? 0;
+                                      final taxName =
+                                          line['tax_name'] ?? 'No Tax';
+                                      final price = line['price_unit'] ?? 0.0;
+                                      final subtotal =
+                                          line['price_total'] ?? 0.0;
+                                      final productImageBase64 = line[
+                                          'image_1920']; // Product image in base64
+
+                                      return Card(
+                                        margin: const EdgeInsets.symmetric(
+                                            vertical: 8.0),
+                                        child: ListTile(
+                                          leading: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(8),
+                                            child: productImageBase64 != null &&
+                                                    productImageBase64 is String
+                                                ? Image.memory(
+                                                    base64Decode(
+                                                        productImageBase64),
+                                                    width: 50,
+                                                    height: 50,
+                                                    fit: BoxFit.cover,
+                                                    errorBuilder: (context,
+                                                        error, stackTrace) {
+                                                      return const Icon(
+                                                          Icons.broken_image,
+                                                          size: 50);
+                                                    },
+                                                  )
+                                                : const Icon(
+                                                    Icons.image_not_supported,
+                                                    size: 50),
+                                          ),
+                                          title: Text(
+                                            line['name'] ?? 'No Description',
+                                            style:
+                                                const TextStyle(fontSize: 12),
+                                          ),
+                                          subtitle: Padding(
+                                            padding:
+                                                const EdgeInsets.only(top: 1),
+                                            child: Table(
+                                              columnWidths: const {
+                                                0: IntrinsicColumnWidth(),
+                                                1: FixedColumnWidth(12),
+                                              },
+                                              children: [
+                                                TableRow(
+                                                  children: [
+                                                    const Text(
+                                                      'Qty',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    const Text(
+                                                      ' : ',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    Text(
+                                                      qty.toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                  ],
+                                                ),
+                                                TableRow(
+                                                  children: [
+                                                    const Text(
+                                                      'Price',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    const Text(
+                                                      ' : ',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    Text(
+                                                      currencyFormatter
+                                                          .format(price),
+                                                      style: const TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                  ],
+                                                ),
+                                                TableRow(
+                                                  children: [
+                                                    const Text(
+                                                      'Taxes',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    const Text(
+                                                      ' : ',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    Text(
+                                                      taxName.toString(),
+                                                      style: const TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                  ],
+                                                ),
+                                                TableRow(
+                                                  children: [
+                                                    const Text(
+                                                      'Subtotal',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    const Text(
+                                                      ' : ',
+                                                      style: TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                    Text(
+                                                      currencyFormatter
+                                                          .format(subtotal),
+                                                      style: const TextStyle(
+                                                          fontSize: 12),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  });
                             },
                           ),
                   ),

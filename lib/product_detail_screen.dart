@@ -59,7 +59,7 @@ class ProductDetailScreen extends StatelessWidget {
                   Text(
                     product['default_code'] != null &&
                             product['default_code'] != false
-                        ? '${product['default_code']} ${product['name']}'
+                        ? '[${product['default_code']}] ${product['name']}'
                         : product['name'],
                     style: const TextStyle(
                         fontSize: 16, fontWeight: FontWeight.bold),

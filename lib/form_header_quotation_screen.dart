@@ -19,6 +19,7 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
   List<Map<String, dynamic>> globalAddresses = [];
   List<Map<String, dynamic>> filteredInvoiceAddresses = [];
   List<Map<String, dynamic>> filteredDeliveryAddresses = [];
+  String notes = ''; 
 
   Map<String, dynamic>? selectedCustomer;
   Map<String, dynamic>? selectedSalesperson;
@@ -151,6 +152,7 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
         'user_member_id': selectedSalesperson!['id'],
         'payment_term_id': selectedPaymentTerm!['id'],
         'warehouse_id': selectedWarehouse!['id'],
+        'notes': notes,
       };
       if (customervat != '0000000000000000' && customervat!.isEmpty) {
         headerData['vat'] = customervat;
@@ -161,9 +163,14 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
       final quotationId =
           await widget.odooService.createQuotationHeader(headerData);
 
-      Navigator.pushNamed(context, '/formDetail', arguments: {
-        'quotationId': quotationId,
-      });
+      Navigator.pushNamed(
+        context,
+        '/formDetail',
+        arguments: {
+          'quotationId': quotationId,
+          'headerData': headerData,
+        },
+      );
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving quotation header: $e')),
@@ -391,6 +398,36 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
                 },
               ),
               const SizedBox(height: 16),
+              Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  "Notes",
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: Colors.white,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  maxLines: 3, // Allow multiple lines for notes
+                  onChanged: (value) {
+                    setState(() {
+                      notes = value;
+                    });
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
               Center(
                 child: ElevatedButton(
                   onPressed: _saveHeader,

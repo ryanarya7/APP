@@ -20,17 +20,15 @@ class FormDetailQuotation extends StatefulWidget {
 
 class _FormDetailQuotationState extends State<FormDetailQuotation> {
   List<Map<String, dynamic>> products = [];
-  List<Map<String, dynamic>> filteredProducts = []; // Produk yang difilter
+  List<Map<String, dynamic>> filteredProducts = [];
   List<Map<String, dynamic>> quotationLines = [];
-  final TextEditingController _searchController =
-      TextEditingController(); // Controller untuk search bar
+  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _noteController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     _loadProducts();
-
-    // Listener untuk Search Bar
     _searchController.addListener(_filterProducts);
   }
 
@@ -38,16 +36,16 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     try {
       final fetchedProducts = await widget.odooService.fetchProducts();
       setState(() {
-        // Filter products to exclude items with qty_available <= 0
-        products =
-            fetchedProducts.where((p) => p['qty_available'] > 0).toList();
-        filteredProducts =
-            List.from(products); // Salin semua produk ke list yang difilter
+        // Store all products in both lists
+        products = List.from(fetchedProducts);
+        filteredProducts = List.from(fetchedProducts);
       });
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading products: $e')),
-      );
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error loading products: $e')),
+        );
+      });
     }
   }
 
@@ -80,7 +78,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
         quotationLines.add({
           'product_id': product['id'],
           'product_template_id': product['id'],
-          'name': '${product['default_code']} ${product['name']}',
+          'name': '[${product['default_code']}] ${product['name']}',
           'product_uom_qty': 1,
           'product_uom': product['uom_id'][0],
           'price_unit': product['list_price'],
@@ -91,22 +89,71 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
             thousandSeparator: '.',
             initialValue: product['list_price'] ?? 0.0,
             precision: 2,
-          ), // Tambahkan controller
+          ),
+          'display_type': null,
         });
       }
     });
   }
 
+  void _addNote() {
+    _noteController.clear(); // Clear previous note text
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Add a Note'),
+          content: TextField(
+            controller: _noteController,
+            decoration: const InputDecoration(
+              hintText: 'Enter your note here',
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                // Add the note to quotation lines
+                if (_noteController.text.isNotEmpty) {
+                  setState(() {
+                    quotationLines.add({
+                      'name': _noteController.text,
+                      'display_type': 'line_note', // This is crucial for Odoo
+                      // Note: Don't include product_id, product_uom, or other product-related fields
+                    });
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   void _updateQuantity(int index, int delta) {
     setState(() {
-      final currentQty = quotationLines[index]['product_uom_qty'] ?? 0;
-      final maxQty = quotationLines[index]['qty_available'] ?? double.infinity;
-      final newQty = currentQty + delta;
+      // Only update quantity for product lines, not notes
+      if (quotationLines[index]['display_type'] != 'line_note') {
+        final currentQty = quotationLines[index]['product_uom_qty'] ?? 0;
+        // final maxQty =
+        //     quotationLines[index]['qty_available'] ?? double.infinity;
+        final newQty = currentQty + delta;
 
-      if (newQty > 0 && newQty <= maxQty) {
-        quotationLines[index]['product_uom_qty'] = newQty;
-      } else if (newQty <= 0) {
-        _removeLine(index);
+        if (newQty > 0) {
+          quotationLines[index]['product_uom_qty'] = newQty;
+        } else if (newQty <= 0) {
+          _removeLine(index);
+        }
       }
     });
   }
@@ -124,12 +171,56 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     });
   }
 
+  void _editNote(int index, String currentNote) {
+    _noteController.text = currentNote;
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: const Text('Edit Note'),
+          content: TextField(
+            controller: _noteController,
+            decoration: const InputDecoration(
+              border: OutlineInputBorder(),
+            ),
+            maxLines: 3,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                // Update the note
+                if (_noteController.text.isNotEmpty) {
+                  setState(() {
+                    quotationLines[index]['name'] = _noteController.text;
+                  });
+                }
+                Navigator.of(context).pop();
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   Future<void> _saveQuotationLines() async {
     // Validasi harga sebelum menyimpan
     bool isPriceValid = true;
     List<String> invalidPriceMessages = [];
 
     for (int index = 0; index < quotationLines.length; index++) {
+      // Skip validation for note lines
+      if (quotationLines[index]['display_type'] == 'line_note') {
+        continue;
+      }
+
       // Sinkronkan nilai dari controller ke quotationLines
       final currentLine = quotationLines[index];
       final controllerValue = currentLine['price_controller'].numberValue;
@@ -175,12 +266,20 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     try {
       // Proses penyimpanan jika semua harga valid
       for (var line in quotationLines) {
+        // Create a clean copy without controller objects
+        Map<String, dynamic> cleanLine = {...line};
+        if (cleanLine.containsKey('price_controller')) {
+          cleanLine.remove('price_controller');
+        }
+
         await widget.odooService
-            .addQuotationLine(widget.headerData['quotationId'], line);
+            .addQuotationLine(widget.headerData['quotationId'], cleanLine);
       }
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Quotation lines saved successfully!')),
       );
+
       Navigator.pushNamed(
         context,
         '/quotationDetail',
@@ -271,12 +370,23 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
               ),
             ),
             const Divider(height: 5),
-
-            const Text("Order Lines",
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                )),
+            const SizedBox(height: 5),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Order Lines",
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                    )),
+                // Add Note button
+                IconButton(
+                  icon: const Icon(Icons.note_add, color: Colors.blue),
+                  tooltip: 'Add a note',
+                  onPressed: _addNote,
+                ),
+              ],
+            ),
             const SizedBox(height: 8),
 
             Expanded(
@@ -286,6 +396,41 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                   final line = quotationLines[index];
                   final productImageBase64 =
                       line['image_1920']; // Gambar produk
+
+                  if (line['display_type'] == 'line_note') {
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                      color: Colors
+                          .yellow[100], // Light yellow background for notes
+                      child: Padding(
+                        padding: const EdgeInsets.all(12.0),
+                        child: Row(
+                          children: [
+                            const Icon(Icons.note, color: Colors.amber),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                line['name'],
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontStyle: FontStyle.italic,
+                                ),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.edit, color: Colors.blue),
+                              onPressed: () => _editNote(index, line['name']),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              onPressed: () => _removeLine(index),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
                   return Card(
                     margin: const EdgeInsets.symmetric(vertical: 8.0),
                     child: Padding(
@@ -297,7 +442,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                           Text(
                             line['name'],
                             style: const TextStyle(
-                              fontSize: 14,
+                              fontSize: 12,
                               fontWeight: FontWeight.bold,
                             ),
                             textAlign: TextAlign.left,
@@ -453,15 +598,11 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                   IconButton(
                                     icon: Icon(
                                       Icons.add_circle,
-                                      color: (line['product_uom_qty'] ?? 0) <
-                                              (line['qty_available'] ?? 0)
-                                          ? Colors.green
-                                          : Colors.grey,
+                                      color: Colors
+                                          .green, // Selalu hijau karena tidak ada pengecekan
                                     ),
-                                    onPressed: (line['product_uom_qty'] ?? 0) <
-                                            (line['qty_available'] ?? 0)
-                                        ? () => _updateQuantity(index, 1)
-                                        : null,
+                                    onPressed: () => _updateQuantity(
+                                        index, 1), // Selalu aktif
                                   ),
                                   // Tombol Delete
                                   IconButton(

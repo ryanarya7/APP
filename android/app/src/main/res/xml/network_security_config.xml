@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
     <domain-config cleartextTrafficPermitted="false">
-        <domain includeSubdomains="true">jlm17.alphasoft.co.id</domain>
+        <domain includeSubdomains="true">bpa.alphasoft.co.id</domain>
         <trust-anchors>
             <certificates src="@raw/alphasoft"/>
             <certificates src="system"/>

@@ -34,15 +34,27 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _initializeProducts();
     _initializeCategories();
+
+    // Listener untuk search bar
+    _searchController.addListener(() {
+      _filterProducts(_searchController.text);
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose(); // Bersihkan listener saat widget dihapus
+    super.dispose();
   }
 
   Future<void> _initializeProducts() async {
     try {
-      final products = await widget.odooService.fetchProducts();
+      // Fetch products from product.template
+      final products = await widget.odooService.fetchProductsTemplate();
       if (!mounted) return;
       setState(() {
-        _products = products;
-        _filteredProducts = products;
+        _products = products; // Simpan produk dari product.template
+        _filteredProducts = products; // Inisialisasi filteredProducts
       });
     } catch (e) {
       if (mounted) {
@@ -81,9 +93,7 @@ class _HomeScreenState extends State<HomeScreen> {
       List<Map<String, dynamic>> baseProducts = _selectedCategoryId == null
           ? List.from(_products) // Semua produk
           : _products.where((product) {
-              final category = product['category_id'];
-
-              // Tangani format `category_id`
+              final category = product['categ_id'];
               if (category is List && category.isNotEmpty) {
                 return category.first.toString() == _selectedCategoryId;
               }
@@ -100,51 +110,31 @@ class _HomeScreenState extends State<HomeScreen> {
         _filteredProducts = baseProducts.where((product) {
           final name = product['name'];
           final code = product['default_code'];
-
-          // Pastikan hanya string yang diproses
           final nameStr = name is String ? name.toLowerCase() : '';
           final codeStr = code is String ? code.toLowerCase() : '';
-
           return nameStr.contains(query.toLowerCase()) ||
               codeStr.contains(query.toLowerCase());
         }).toList();
       }
     });
 
-    // Log debugging
+    // Debugging logs
     debugPrint('Search query: $query');
     debugPrint('Filtered products count: ${_filteredProducts.length}');
   }
 
-  void _filterProductsByCategory(String? categoryId) async {
+  void _filterProductsByCategory(String? categoryId) {
     setState(() {
-      // Jika kategori yang dipilih sama dengan yang sudah aktif, batalkan pilihan
+      // Jika kategori yang dipilih sama dengan yang aktif, batalkan pilihan
       if (_selectedCategoryId == categoryId) {
         _selectedCategoryId = null;
-        // Memanggil ulang semua produk
-        _initializeProducts();
-        return;
+      } else {
+        _selectedCategoryId = categoryId; // Set kategori yang dipilih
       }
 
-      _selectedCategoryId = categoryId; // Set kategori yang dipilih
+      // Terapkan filter berdasarkan kategori dan pencarian
+      _filterProducts(_searchController.text);
     });
-
-    // Jika kategori dilepas, tidak fetch produk berdasarkan kategori
-    if (categoryId == null) return;
-
-    try {
-      // Fetch produk berdasarkan kategori yang dipilih
-      final products =
-          await widget.odooService.fetchProductsByCategory(categoryId);
-      setState(() {
-        _filteredProducts = products;
-      });
-    } catch (e) {
-      print('Error fetching products by category: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading products by category: $e')),
-      );
-    }
   }
 
   Widget _buildCategoryList() {
@@ -178,7 +168,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
               margin: const EdgeInsets.symmetric(horizontal: 5, vertical: 10),
-              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 5),
               child: Center(
                 child: Text(
                   category['name'] ?? 'Unknown',
@@ -206,12 +196,20 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
-      child: Card(
+      child: Container(
         margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-        shape: RoundedRectangleBorder(
+        decoration: BoxDecoration(
+          color: Colors.white,
           borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey,
+              blurRadius: 10,
+              spreadRadius: 1,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
-        elevation: 2,
         child: Padding(
           padding: const EdgeInsets.all(10.0),
           child: Row(
@@ -241,7 +239,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   children: [
                     // Nama Produk
                     Text(
-                      product['name'] ?? 'Unknown Product',
+                      product['default_code'] != null &&
+                              product['default_code'] != false
+                          ? '[${product['default_code']}] ${product['name']}'
+                          : product['name'],
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 12,
@@ -261,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     // Ketersediaan
                     Text(
-                      'Available: ${product['qty_available'] ?? 0}',
+                      'Available : ${product['qty_available'] ?? 0}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.black54,
@@ -295,14 +296,24 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         );
       },
-      child: Card(
-        shape: RoundedRectangleBorder(
+      child: Container(
+        margin: const EdgeInsets.all(8), // Tambahkan margin
+        decoration: BoxDecoration(
+          color: Colors.white, // Warna latar belakang card
           borderRadius: BorderRadius.circular(15),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.grey, // Warna shadow
+              blurRadius: 10, // Seberapa kabur shadow
+              spreadRadius: 2, // Seberapa lebar shadow
+              offset:
+                  const Offset(0, 4), // Posisi shadow (horizontal, vertical)
+            ),
+          ],
         ),
-        elevation: 5,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min, // Membatasi tinggi sesuai konten
+          mainAxisSize: MainAxisSize.min,
           children: [
             // Gambar Produk
             Expanded(
@@ -326,13 +337,13 @@ class _HomeScreenState extends State<HomeScreen> {
               padding: const EdgeInsets.all(10.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min, // Pastikan tinggi sesuai isi
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   // Nama Produk
                   Text(
                     product['default_code'] != null &&
                             product['default_code'] != false
-                        ? '${product['default_code']} ${product['name']}'
+                        ? '[${product['default_code']}] ${product['name']}'
                         : product['name'],
                     style: const TextStyle(
                       fontSize: 13,
@@ -353,7 +364,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   // Ketersediaan Produk
                   Text(
-                    'Available: ${product['qty_available'] ?? 0}',
+                    'Available : ${product['qty_available'] ?? 0}',
                     style: const TextStyle(
                       color: Colors.black54,
                       fontSize: 13,

@@ -5,8 +5,9 @@ import 'navigation_screen.dart';
 import 'odoo_service.dart';
 import 'quotation_detail_screen.dart';
 import 'sale_order_list_screen.dart';
-// import 'form_collection_screen.dart';
 import 'detail_collection_screen.dart';
+import 'check_giro_detail_screen.dart';
+import 'form_header_check_giro_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +33,9 @@ class MyApp extends StatelessWidget {
           final args = ModalRoute.of(context)!.settings.arguments
               as Map<String, dynamic>;
           return FormDetailQuotation(
-              odooService: odooService, headerData: args);
+            odooService: odooService,
+            headerData: args,
+          );
         },
         '/saleOrderList': (context) =>
             SaleOrderListScreen(odooService: odooService),
@@ -44,6 +47,18 @@ class MyApp extends StatelessWidget {
         '/collectionDetail': (context) => DetailCollectionScreen(
               odooService: odooService,
             ),
+        '/giroFormHeader': (context) => GiroFormHeaderScreen(
+              odooService: odooService,
+            ),
+        '/checkGiroDetail': (context) {
+          final args = ModalRoute.of(context)?.settings.arguments
+              as Map<String, dynamic>;
+          final checkBookId = args['checkBookId'];
+          return CheckGiroDetailScreen(
+            odooService: odooService,
+            checkBookId: checkBookId,
+          );
+        },
       },
     );
   }
