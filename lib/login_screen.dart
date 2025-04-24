@@ -29,8 +29,8 @@ class _LoginScreenState extends State<LoginScreen>
   void initState() {
     super.initState();
     _databaseController.text = 'bpa';
-    _usernameController.text = '';
-    _passwordController.text = '';
+    _usernameController.text = 'admin';
+    _passwordController.text = 'a';
 
     // Inisialisasi AnimationController untuk getar
     _shakeController = AnimationController(

@@ -70,8 +70,9 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     // Controllers for form fields
     final TextEditingController giroNumberController = TextEditingController();
     int? selectedBankId;
+    DateTime receiveDate = DateTime.now();
     DateTime giroDate = DateTime.now();
-    DateTime giroExpiredDate = DateTime.now().add(const Duration(days: 30));
+    DateTime giroExpiredDate = DateTime.now();
     final TextEditingController amountController = TextEditingController();
 
     showDialog(
@@ -176,6 +177,47 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      title: const Text(
+                        "Receive Date",
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        DateFormat('dd-MM-yyyy').format(receiveDate),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: receiveDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null && picked != receiveDate) {
+                          receiveDate = picked;
+                          // Make sure expired date is not before giro date
+                          if (giroExpiredDate.isBefore(receiveDate)) {
+                            giroExpiredDate =
+                                receiveDate.add(const Duration(days: 30));
+                          }
+                          (context as Element).markNeedsBuild();
+                        }
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
                   // Giro Date
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
@@ -204,13 +246,14 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                           lastDate: DateTime(2100),
                         );
                         if (picked != null && picked != giroDate) {
-                          giroDate = picked;
-                          // Make sure expired date is not before giro date
-                          if (giroExpiredDate.isBefore(giroDate)) {
-                            giroExpiredDate =
-                                giroDate.add(const Duration(days: 30));
-                          }
-                          (context as Element).markNeedsBuild();
+                          setState(() {
+                            giroDate = picked;
+                            // Make sure expired date is not before giro date
+                            if (giroExpiredDate.isBefore(giroDate)) {
+                              giroExpiredDate =
+                                  giroDate.add(const Duration(days: 30));
+                            }
+                          });
                         }
                       },
                     ),
@@ -246,8 +289,9 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                           lastDate: DateTime(2100),
                         );
                         if (picked != null && picked != giroExpiredDate) {
-                          giroExpiredDate = picked;
-                          (context as Element).markNeedsBuild();
+                          setState(() {
+                            giroExpiredDate = picked;
+                          });
                         }
                       },
                     ),
@@ -364,6 +408,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
       'checkbook_id': widget.checkBookId,
       'name': giroNumber,
       'partner_bank_id': bankId,
+      'receive_date': DateFormat('yyyy-MM-dd').format(giroDate),
       'date': DateFormat('yyyy-MM-dd').format(giroDate),
       'date_end': DateFormat('yyyy-MM-dd').format(giroExpiredDate),
       'check_amount': amount,
@@ -411,14 +456,19 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     final TextEditingController giroNumberController =
         TextEditingController(text: line['name'] ?? '');
     int? selectedBankId;
+    DateTime receiveDate = DateTime.now();
     DateTime giroDate = DateTime.now();
-    DateTime giroExpiredDate = DateTime.now().add(const Duration(days: 30));
+    DateTime giroExpiredDate = DateTime.now();
     final TextEditingController amountController =
         TextEditingController(text: (line['check_amount'] ?? 0).toString());
 
     // Initialize values from the line
     if (line['partner_bank_id'] != null && line['partner_bank_id'] is List) {
       selectedBankId = line['partner_bank_id'][0] as int?;
+    }
+
+    if (line['receive_date'] != null) {
+      receiveDate = DateTime.parse(line['receive_date']);
     }
 
     if (line['date'] != null) {
@@ -465,14 +515,17 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         "Giro Number",
                         style: TextStyle(fontSize: 14),
                       ),
-                      subtitle: Text(
-                        giroNumberController.text,
+                      subtitle: TextFormField(
+                        controller: giroNumberController,
+                        decoration: const InputDecoration(
+                          hintText: 'Enter giro number',
+                          border: InputBorder.none,
+                        ),
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      enabled: false, // Read-only
                     ),
                   ),
 
@@ -522,6 +575,42 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                             }).toList(),
                           ),
                         );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  Container(
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: Colors.grey.shade300),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: ListTile(
+                      title: const Text(
+                        "Receive Date",
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      subtitle: Text(
+                        DateFormat('dd-MM-yyyy').format(receiveDate),
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      trailing: const Icon(Icons.calendar_today),
+                      onTap: () async {
+                        final DateTime? picked = await showDatePicker(
+                          context: context,
+                          initialDate: receiveDate,
+                          firstDate: DateTime(2000),
+                          lastDate: DateTime(2100),
+                        );
+                        if (picked != null && picked != receiveDate) {
+                          receiveDate = picked;
+                          (context as Element).markNeedsBuild();
+                        }
                       },
                     ),
                   ),
@@ -652,7 +741,10 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         onPressed: () {
                           // Save the changes
                           Map<String, dynamic> updatedValues = {
+                            'name': giroNumberController.text,
                             'partner_bank_id': selectedBankId,
+                            'receive_date':
+                                DateFormat('yyyy-MM-dd').format(receiveDate),
                             'date': DateFormat('yyyy-MM-dd').format(giroDate),
                             'date_end': DateFormat('yyyy-MM-dd')
                                 .format(giroExpiredDate),
@@ -786,238 +878,338 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     int? selectedUserId = currentUserId; // Keep the existing user ID
     DateTime selectedDate = currentReceiveDate;
 
+    // Search controller for customers
+    final TextEditingController searchController = TextEditingController();
+    List<Map<String, dynamic>> filteredCustomers = [];
+    bool isSearching = false;
+
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            width: MediaQuery.of(context).size.width * 0.9,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Edit Giro Book Header",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Payment Type (Read-only)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Payment Type",
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: const Text(
-                        "Receive (Inbound)",
+        return StatefulBuilder(
+          builder: (BuildContext context, StateSetter setState) {
+            return Dialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                width: MediaQuery.of(context).size.width * 0.9,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        "Edit Giro Book Header",
                         style: TextStyle(
-                          fontSize: 16,
+                          fontSize: 18,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      trailing: const Icon(
-                        Icons.arrow_forward_ios,
-                        color: Colors.grey,
-                        size: 16,
-                      ),
-                      enabled: false, // Read-only
-                    ),
-                  ),
+                      const SizedBox(height: 16),
 
-                  const SizedBox(height: 16),
-
-                  // Customer Dropdown
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: customers,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const ListTile(
-                              title: Text("Loading customers..."));
-                        }
-
-                        if (snapshot.hasError) {
-                          return ListTile(
-                              title: Text("Error: ${snapshot.error}"));
-                        }
-
-                        final customerList = snapshot.data ?? [];
-                        return ListTile(
+                      // Payment Type (Read-only)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListTile(
                           title: const Text(
-                            "Customer",
+                            "Payment Type",
                             style: TextStyle(fontSize: 14),
                           ),
-                          subtitle: DropdownButton<int>(
-                            value: selectedCustomerId,
-                            isExpanded: true,
-                            hint: const Text("Select Customer"),
-                            onChanged: (int? newValue) {
-                              selectedCustomerId = newValue;
-                              (context as Element).markNeedsBuild();
-                            },
-                            items: customerList
-                                .map<DropdownMenuItem<int>>((customer) {
-                              return DropdownMenuItem<int>(
-                                value: customer['id'] as int,
-                                child: Text(customer['name'] ?? 'Unknown'),
-                              );
-                            }).toList(),
+                          subtitle: const Text(
+                            "Receive (Inbound)",
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 16),
-
-                  // Receive Date
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Receive Date",
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(selectedDate),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                          trailing: const Icon(
+                            Icons.arrow_forward_ios,
+                            color: Colors.grey,
+                            size: 16,
+                          ),
+                          enabled: false, // Read-only
                         ),
                       ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: selectedDate,
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null && picked != selectedDate) {
-                          selectedDate = picked;
-                          (context as Element).markNeedsBuild();
-                        }
-                      },
-                    ),
-                  ),
 
-                  const SizedBox(height: 16),
+                      const SizedBox(height: 16),
 
-                  // Received By (Read-only)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: users,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const ListTile(
-                              title: Text("Loading users..."));
-                        }
-
-                        if (snapshot.hasError) {
-                          return ListTile(
-                              title: Text("Error: ${snapshot.error}"));
-                        }
-
-                        // Find the currently logged in user name
-                        String userName = "Current User";
-                        if (selectedUserId != null) {
-                          final userList = snapshot.data ?? [];
-                          for (var user in userList) {
-                            if (user['id'] == selectedUserId) {
-                              userName = user['name'] ?? 'Unknown';
-                              break;
+                      // Customer Dropdown with Search
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: FutureBuilder<List<Map<String, dynamic>>>(
+                          future: customers,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const ListTile(
+                                  title: Text("Loading customers..."));
                             }
-                          }
-                        }
 
-                        return ListTile(
+                            if (snapshot.hasError) {
+                              return ListTile(
+                                  title: Text("Error: ${snapshot.error}"));
+                            }
+
+                            final customerList = snapshot.data ?? [];
+
+                            if (!isSearching) {
+                              // Find the selected customer name for display
+                              String selectedCustomerName = "Select Customer";
+                              if (selectedCustomerId != null) {
+                                for (var customer in customerList) {
+                                  if (customer['id'] == selectedCustomerId) {
+                                    selectedCustomerName =
+                                        customer['name'] ?? 'Unknown';
+                                    break;
+                                  }
+                                }
+                              }
+
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  ListTile(
+                                    title: const Text(
+                                      "Customer",
+                                      style: TextStyle(fontSize: 14),
+                                    ),
+                                    subtitle: Text(
+                                      selectedCustomerName,
+                                      style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    trailing: const Icon(Icons.search),
+                                    onTap: () {
+                                      setState(() {
+                                        isSearching = true;
+                                        filteredCustomers =
+                                            List.from(customerList);
+                                      });
+                                    },
+                                  ),
+                                ],
+                              );
+                            } else {
+                              // Show search interface
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16.0),
+                                    child: Text(
+                                      "Customer",
+                                      style: TextStyle(
+                                          fontSize: 14,
+                                          color: Colors.grey[700]),
+                                    ),
+                                  ),
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 16.0, vertical: 8.0),
+                                    child: TextField(
+                                      controller: searchController,
+                                      decoration: InputDecoration(
+                                        hintText: "Search customer...",
+                                        prefixIcon: const Icon(Icons.search),
+                                        suffixIcon: IconButton(
+                                          icon: const Icon(Icons.close),
+                                          onPressed: () {
+                                            setState(() {
+                                              isSearching = false;
+                                              searchController.clear();
+                                            });
+                                          },
+                                        ),
+                                        border: OutlineInputBorder(
+                                          borderRadius:
+                                              BorderRadius.circular(8.0),
+                                        ),
+                                      ),
+                                      onChanged: (value) {
+                                        setState(() {
+                                          filteredCustomers = customerList
+                                              .where((customer) =>
+                                                  customer['name']
+                                                      .toString()
+                                                      .toLowerCase()
+                                                      .contains(
+                                                          value.toLowerCase()))
+                                              .toList();
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxHeight:
+                                          MediaQuery.of(context).size.height *
+                                              0.3,
+                                    ),
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: filteredCustomers.length,
+                                      itemBuilder: (context, index) {
+                                        final customer =
+                                            filteredCustomers[index];
+                                        return ListTile(
+                                          title: Text(
+                                              customer['name'] ?? 'Unknown'),
+                                          onTap: () {
+                                            setState(() {
+                                              selectedCustomerId =
+                                                  customer['id'] as int;
+                                              isSearching = false;
+                                              searchController.clear();
+                                            });
+                                          },
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                          },
+                        ),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Created Date (Read-only)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: ListTile(
                           title: const Text(
-                            "Received By",
+                            "Created Date",
                             style: TextStyle(fontSize: 14),
                           ),
                           subtitle: Text(
-                            userName,
+                            DateFormat('dd-MM-yyyy').format(selectedDate),
                             style: const TextStyle(
                               fontSize: 16,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
+                          trailing: const Icon(
+                            Icons.calendar_today,
+                            color: Colors.grey,
+                          ),
                           enabled: false, // Read-only
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(); // Close dialog
-                        },
-                        child: const Text("Cancel"),
-                      ),
-                      const SizedBox(width: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          // Save the changes
-                          Map<String, dynamic> updatedValues = {
-                            'payment_type': 'inbound', // Fixed as inbound
-                            'partner_id': selectedCustomerId,
-                            'date':
-                                DateFormat('yyyy-MM-dd').format(selectedDate),
-                            // Keep the original user_id, making it readonly
-                            'user_id': selectedUserId,
-                          };
-
-                          _updateCheckBookHeader(updatedValues);
-                          Navigator.of(context).pop();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
                         ),
-                        child: const Text("Save"),
+                      ),
+
+                      const SizedBox(height: 16),
+
+                      // Received By (Read-only)
+                      Container(
+                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: Colors.grey.shade300),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: FutureBuilder<List<Map<String, dynamic>>>(
+                          future: users,
+                          builder: (context, snapshot) {
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return const ListTile(
+                                  title: Text("Loading users..."));
+                            }
+
+                            if (snapshot.hasError) {
+                              return ListTile(
+                                  title: Text("Error: ${snapshot.error}"));
+                            }
+
+                            // Find the currently logged in user name
+                            String userName = "Current User";
+                            if (selectedUserId != null) {
+                              final userList = snapshot.data ?? [];
+                              for (var user in userList) {
+                                if (user['id'] == selectedUserId) {
+                                  userName = user['name'] ?? 'Unknown';
+                                  break;
+                                }
+                              }
+                            }
+
+                            return ListTile(
+                              title: const Text(
+                                "Received By",
+                                style: TextStyle(fontSize: 14),
+                              ),
+                              subtitle: Text(
+                                userName,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              enabled: false, // Read-only
+                            );
+                          },
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // Buttons
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.of(context).pop(); // Close dialog
+                            },
+                            child: const Text("Cancel"),
+                          ),
+                          const SizedBox(width: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              // Save the changes
+                              Map<String, dynamic> updatedValues = {
+                                'payment_type': 'inbound', // Fixed as inbound
+                                'partner_id': selectedCustomerId,
+                                'date': DateFormat('yyyy-MM-dd')
+                                    .format(selectedDate),
+                                // Keep the original user_id, making it readonly
+                                'user_id': selectedUserId,
+                              };
+
+                              _updateCheckBookHeader(updatedValues);
+                              Navigator.of(context).pop();
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.blue,
+                              foregroundColor: Colors.white,
+                            ),
+                            child: const Text("Save"),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
+                ),
               ),
-            ),
-          ),
+            );
+          },
         );
       },
     );
@@ -1266,7 +1458,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                 _buildInfoRow("Customer",
                                     _getSafeValue(checkBook['partner_id'])),
                                 _buildInfoRow(
-                                    "Receive Date",
+                                    "Created Date",
                                     DateFormat('dd-MM-yyyy').format(
                                         DateTime.parse(
                                             checkBook['date'] ?? ''))),
@@ -1303,7 +1495,8 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         style: TextStyle(
                             fontSize: 14, fontWeight: FontWeight.bold),
                       ),
-                      if (checkBook['state'] == 'draft')
+                      if (checkBook['state'] == 'draft' ||
+                          checkBook['state'] == 'confirm')
                         IconButton(
                           icon: const Icon(Icons.add, color: Colors.green),
                           onPressed: () {
@@ -1339,7 +1532,8 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       itemCount: lines.length,
                       itemBuilder: (context, index) {
                         final line = lines[index];
-                        final bool canEdit = checkBook['state'] == 'draft';
+                        final bool canEdit = checkBook['state'] == 'draft' ||
+                            checkBook['state'] == 'confirm';
 
                         return Card(
                           margin: const EdgeInsets.symmetric(
@@ -1363,6 +1557,15 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                         "Giro No", line['name'] ?? ''),
                                     _buildInfoRow("Bank Penerbit",
                                         _getSafeValue(line['partner_bank_id'])),
+                                    _buildInfoRow(
+                                      "Receive Date",
+                                      line['receive_date'] != null &&
+                                              line['receive_date'] is String
+                                          ? DateFormat('dd-MM-yyyy').format(
+                                              DateTime.parse(
+                                                  line['receive_date']))
+                                          : "",
+                                    ),
                                     _buildInfoRow(
                                         "Giro Date",
                                         DateFormat('dd-MM-yyyy').format(
@@ -1408,20 +1611,22 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                   right: 8,
                                   child: Row(
                                     children: [
-                                      IconButton(
-                                        icon: const Icon(Icons.edit,
-                                            color: Colors.blue, size: 20),
-                                        onPressed: () {
-                                          _showEditLineDialog(line);
-                                        },
-                                      ),
-                                      IconButton(
-                                        icon: const Icon(Icons.delete,
-                                            color: Colors.red, size: 20),
-                                        onPressed: () {
-                                          _showDeleteConfirmation(line['id']);
-                                        },
-                                      ),
+                                      if (line['payment_status'] == 'no')
+                                        IconButton(
+                                          icon: const Icon(Icons.edit,
+                                              color: Colors.blue, size: 20),
+                                          onPressed: () {
+                                            _showEditLineDialog(line);
+                                          },
+                                        ),
+                                      if (line['payment_status'] == 'no')
+                                        IconButton(
+                                          icon: const Icon(Icons.delete,
+                                              color: Colors.red, size: 20),
+                                          onPressed: () {
+                                            _showDeleteConfirmation(line['id']);
+                                          },
+                                        ),
                                     ],
                                   ),
                                 ),
@@ -1658,7 +1863,6 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
   }
 
   Color? _getPaymentStatusColor(String? paymentStatus) {
-    // Implementation remains the same
     switch (paymentStatus) {
       case 'paid':
         return Colors.green;
@@ -1671,7 +1875,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
       case 'cancel':
         return Colors.red;
       default:
-        return Colors.black54; // Default color if payment status is unknown
+        return Colors.black54;
     }
   }
 }

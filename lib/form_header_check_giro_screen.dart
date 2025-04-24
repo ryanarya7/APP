@@ -6,7 +6,7 @@ import 'odoo_service.dart';
 
 class GiroFormHeaderScreen extends StatefulWidget {
   final OdooService odooService;
-  final int? checkBookId; // Null for create new, has value for edit
+  final int? checkBookId;
 
   const GiroFormHeaderScreen({
     Key? key,
@@ -163,6 +163,7 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
       } else {
         // Create new record
         checkBookId = await widget.odooService.createCheckBook(giroHeaderData);
+        print("Successfully created checkbook with ID: $checkBookId");
         _showSuccessSnackbar('Giro header created successfully');
       }
 
@@ -179,6 +180,7 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
         );
       }
     } catch (e) {
+      print("Error in _saveGiroHeader: $e");
       setState(() {
         _isLoading = false;
       });
@@ -204,6 +206,86 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
         backgroundColor: Colors.red,
       ),
     );
+  }
+
+  Future<void> _showCustomerSearchDialog() async {
+    final TextEditingController _searchController = TextEditingController();
+    List<Map<String, dynamic>> _filteredPartners = List.from(_partners);
+
+    void _filterPartners(String query) {
+      _filteredPartners = _partners
+          .where((partner) => partner['name']
+              .toString()
+              .toLowerCase()
+              .contains(query.toLowerCase()))
+          .toList();
+    }
+
+    final selectedPartner = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (BuildContext context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: const Text('Select Customer'),
+              content: Container(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: _searchController,
+                      decoration: const InputDecoration(
+                        labelText: 'Search',
+                        prefixIcon: Icon(Icons.search),
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (value) {
+                        setState(() {
+                          _filterPartners(value);
+                        });
+                      },
+                      autofocus: true,
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: _filteredPartners.length,
+                        itemBuilder: (context, index) {
+                          final partner = _filteredPartners[index];
+                          return ListTile(
+                            title: Text(partner['name']),
+                            onTap: () {
+                              Navigator.of(context).pop(partner);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(context).pop();
+                  },
+                  child: const Text('Cancel'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (selectedPartner != null) {
+      setState(() {
+        _selectedPartnerId = selectedPartner['id'];
+        _selectedPartnerName = selectedPartner['name'];
+      });
+    }
   }
 
   @override
@@ -244,7 +326,7 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
                             TextFormField(
                               controller: _dateController,
                               decoration: InputDecoration(
-                                labelText: 'Date',
+                                labelText: 'Created Date',
                                 border: const OutlineInputBorder(),
                                 suffixIcon: IconButton(
                                   icon: const Icon(Icons.calendar_today),
@@ -252,12 +334,7 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
                                 ),
                               ),
                               readOnly: true,
-                              validator: (value) {
-                                if (value == null || value.isEmpty) {
-                                  return 'Please select a date';
-                                }
-                                return null;
-                              },
+                              enabled: false,
                             ),
                             const SizedBox(height: 16),
 
@@ -276,32 +353,39 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
                             const SizedBox(height: 16),
 
                             // Partner/Customer Selection
-                            DropdownButtonFormField<int>(
-                              value: _selectedPartnerId,
-                              decoration: const InputDecoration(
-                                labelText: 'Customer',
-                                border: OutlineInputBorder(),
+                            InkWell(
+                              onTap: _showCustomerSearchDialog,
+                              child: InputDecorator(
+                                decoration: InputDecoration(
+                                  labelText: 'Customer',
+                                  border: const OutlineInputBorder(),
+                                  errorText:
+                                      _formKey.currentState?.validate() ==
+                                                  false &&
+                                              _selectedPartnerId == null
+                                          ? 'Please select a customer'
+                                          : null,
+                                  suffixIcon: const Icon(Icons.arrow_drop_down),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        _selectedPartnerName ??
+                                            'Select Customer',
+                                        style: TextStyle(
+                                          color: _selectedPartnerName != null
+                                              ? null
+                                              : Theme.of(context).hintColor,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                ),
                               ),
-                              items: _partners.map((partner) {
-                                return DropdownMenuItem<int>(
-                                  value: partner['id'],
-                                  child: Text(partner['name']),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedPartnerId = value;
-                                  _selectedPartnerName = _partners.firstWhere(
-                                      (partner) =>
-                                          partner['id'] == value)['name'];
-                                });
-                              },
-                              validator: (value) {
-                                if (value == null) {
-                                  return 'Please select a customer';
-                                }
-                                return null;
-                              },
                             ),
                             const SizedBox(height: 16),
                             TextFormField(

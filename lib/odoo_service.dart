@@ -559,123 +559,126 @@ class OdooService {
   }
 
   Future<List<Map<String, dynamic>>> fetchOrderLines(
-    List<int> orderLineIds) async {
-  await checkSession();
-  try {
-    // Ambil data order lines
-    final response = await _client.callKw({
-      'model': 'sale.order.line',
-      'method': 'read',
-      'args': [orderLineIds],
-      'kwargs': {
-        'fields': [
-          'product_id', // Product
-          'name', // Description
-          'product_uom_qty', // Quantity
-          'price_unit', // Unit Price
-          'price_subtotal', // Subtotal
-          'price_total', // Total
-          'tax_id', // Taxes
-          'product_uom', // UoM
-          'display_type', // Display Type (for line_note)
-        ],
-      },
-    });
+      List<int> orderLineIds) async {
+    await checkSession();
+    try {
+      // Ambil data order lines
+      final response = await _client.callKw({
+        'model': 'sale.order.line',
+        'method': 'read',
+        'args': [orderLineIds],
+        'kwargs': {
+          'fields': [
+            'product_id', // Product
+            'name', // Description
+            'product_uom_qty', // Quantity
+            'price_unit', // Unit Price
+            'price_subtotal', // Subtotal
+            'price_total', // Total
+            'tax_id', // Taxes
+            'product_uom', // UoM
+            'display_type', // Display Type (for line_note)
+          ],
+        },
+      });
 
-    // Casting respons ke List<Map<String, dynamic>>
-    final List<Map<String, dynamic>> parsedResponse =
-        List<Map<String, dynamic>>.from(
-            response.map((item) => item as Map<String, dynamic>));
+      // Casting respons ke List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> parsedResponse =
+          List<Map<String, dynamic>>.from(
+              response.map((item) => item as Map<String, dynamic>));
 
-    // Ekstrak semua ID pajak dari order lines
-    final taxIds = parsedResponse
-        .where((line) => line['tax_id'] is List && line['tax_id'].isNotEmpty)
-        .map((line) => line['tax_id'][0])
-        .toSet()
-        .toList();
+      // Ekstrak semua ID pajak dari order lines
+      final taxIds = parsedResponse
+          .where((line) => line['tax_id'] is List && line['tax_id'].isNotEmpty)
+          .map((line) => line['tax_id'][0])
+          .toSet()
+          .toList();
 
-    // Ambil detail pajak dari model account.tax
-    final taxDetails = await _client.callKw({
-      'model': 'account.tax',
-      'method': 'search_read',
-      'args': [],
-      'kwargs': {
-        'domain': [
-          ['id', 'in', taxIds]
-        ], // Filter berdasarkan ID pajak
-        'fields': ['id', 'display_name'], // Ambil ID dan nama pajak
-      },
-    });
+      // Ambil detail pajak dari model account.tax
+      final taxDetails = await _client.callKw({
+        'model': 'account.tax',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', 'in', taxIds]
+          ], // Filter berdasarkan ID pajak
+          'fields': ['id', 'display_name'], // Ambil ID dan nama pajak
+        },
+      });
 
-    // Casting taxDetails ke List<Map<String, dynamic>>
-    final List<Map<String, dynamic>> parsedTaxDetails =
-        List<Map<String, dynamic>>.from(
-            taxDetails.map((item) => item as Map<String, dynamic>));
+      // Casting taxDetails ke List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> parsedTaxDetails =
+          List<Map<String, dynamic>>.from(
+              taxDetails.map((item) => item as Map<String, dynamic>));
 
-    // Buat pemetaan ID pajak ke nama pajak
-    final taxNameMap = Map.fromEntries(
-      parsedTaxDetails.map((tax) {
-        return MapEntry(tax['id'], tax['display_name']);
-      }),
-    );
+      // Buat pemetaan ID pajak ke nama pajak
+      final taxNameMap = Map.fromEntries(
+        parsedTaxDetails.map((tax) {
+          return MapEntry(tax['id'], tax['display_name']);
+        }),
+      );
 
-    // Ekstrak semua ID produk unik dari order lines
-    final productIds = parsedResponse
-        .where((line) => line['product_id'] is List && line['product_id'].isNotEmpty)
-        .map((line) => line['product_id'][0])
-        .toSet()
-        .toList();
+      // Ekstrak semua ID produk unik dari order lines
+      final productIds = parsedResponse
+          .where((line) =>
+              line['product_id'] is List && line['product_id'].isNotEmpty)
+          .map((line) => line['product_id'][0])
+          .toSet()
+          .toList();
 
-    // Ambil data produk termasuk gambar dari model product.product
-    final productDetails = await _client.callKw({
-      'model': 'product.product',
-      'method': 'search_read',
-      'args': [],
-      'kwargs': {
-        'domain': [
-          ['id', 'in', productIds]
-        ], // Filter berdasarkan ID produk
-        'fields': ['id', 'image_1920'], // Ambil ID dan gambar produk
-      },
-    });
+      // Ambil data produk termasuk gambar dari model product.product
+      final productDetails = await _client.callKw({
+        'model': 'product.product',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [
+            ['id', 'in', productIds]
+          ], // Filter berdasarkan ID produk
+          'fields': ['id', 'image_1920'], // Ambil ID dan gambar produk
+        },
+      });
 
-    // Casting productDetails ke List<Map<String, dynamic>>
-    final List<Map<String, dynamic>> parsedProductDetails =
-        List<Map<String, dynamic>>.from(
-            productDetails.map((item) => item as Map<String, dynamic>));
+      // Casting productDetails ke List<Map<String, dynamic>>
+      final List<Map<String, dynamic>> parsedProductDetails =
+          List<Map<String, dynamic>>.from(
+              productDetails.map((item) => item as Map<String, dynamic>));
 
-    // Buat pemetaan ID produk ke gambar produk
-    final productImageMap = Map.fromEntries(
-      parsedProductDetails.map((product) {
-        return MapEntry(product['id'], product['image_1920']);
-      }),
-    );
+      // Buat pemetaan ID produk ke gambar produk
+      final productImageMap = Map.fromEntries(
+        parsedProductDetails.map((product) {
+          return MapEntry(product['id'], product['image_1920']);
+        }),
+      );
 
-    // Proses data order lines untuk menambahkan nama pajak dan gambar produk
-    return parsedResponse.map((line) {
-      final taxId = line['tax_id'] is List && line['tax_id'].isNotEmpty
-          ? line['tax_id'][0]
-          : null; // Ambil ID pajak
-      final taxName =
-          taxId != null ? taxNameMap[taxId] : 'No Tax'; // Cari nama pajak
+      // Proses data order lines untuk menambahkan nama pajak dan gambar produk
+      return parsedResponse.map((line) {
+        final taxId = line['tax_id'] is List && line['tax_id'].isNotEmpty
+            ? line['tax_id'][0]
+            : null; // Ambil ID pajak
+        final taxName =
+            taxId != null ? taxNameMap[taxId] : 'No Tax'; // Cari nama pajak
 
-      final productId = line['product_id'] is List && line['product_id'].isNotEmpty
-          ? line['product_id'][0]
-          : null; // Ambil ID produk
-      final productImage =
-          productId != null ? productImageMap[productId] : null; // Cari gambar produk
+        final productId =
+            line['product_id'] is List && line['product_id'].isNotEmpty
+                ? line['product_id'][0]
+                : null; // Ambil ID produk
+        final productImage = productId != null
+            ? productImageMap[productId]
+            : null; // Cari gambar produk
 
-      return {
-        ...line,
-        'tax_id': taxId, // Simpan ID pajak
-        'tax_name': taxName, // Simpan nama pajak
-        'image_1920': productImage, // Simpan gambar produk
-      };
-    }).toList();
-  } catch (e) {
-    throw Exception('Failed to fetch order lines: $e');
+        return {
+          ...line,
+          'tax_id': taxId, // Simpan ID pajak
+          'tax_name': taxName, // Simpan nama pajak
+          'image_1920': productImage, // Simpan gambar produk
+        };
+      }).toList();
+    } catch (e) {
+      throw Exception('Failed to fetch order lines: $e');
+    }
   }
-}
 
   Future<List<Map<String, dynamic>>> fetchCustomerAddresses(
       int customerId) async {
@@ -1071,35 +1074,6 @@ class OdooService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchCheckbooks(String partnerId) async {
-    await checkSession();
-    try {
-      final response = await _client.callKw({
-        'model': 'account.checkbook.line',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'domain': [
-            [
-              'partner_id',
-              '=',
-              int.parse(partnerId)
-            ], // Filter berdasarkan partner_id
-            ['check_residual', '!=', 0], // Hanya checkbook dengan sisa
-          ],
-          'fields': [
-            'id',
-            'name',
-            'check_residual'
-          ], // Ambil ID, nama, dan sisa
-        },
-      });
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      throw Exception('Failed to fetch checkbooks: $e');
-    }
-  }
-
   Future<void> cancelQuotation(int quotationId) async {
     await checkSession();
     try {
@@ -1337,6 +1311,7 @@ class OdooService {
           'fields': [
             'name',
             'partner_bank_id',
+            'receive_date',
             'date',
             'date_end',
             'check_amount',
@@ -1616,11 +1591,37 @@ class OdooService {
         'model': 'account.checkbook',
         'method': 'create',
         'args': [checkBookData],
-        'kwargs': {},
+        'kwargs': {'vals': checkBookData},
       });
 
-      return response;
+      if (response == null) {
+        throw Exception('Odoo server did not return a valid response');
+      }
+
+      if (response is String &&
+          response.contains('(') &&
+          response.contains(')')) {
+        try {
+          final idStr = response.split('(')[1].split(',')[0];
+          return int.parse(idStr);
+        } catch (e) {
+          throw Exception('Failed to extract ID from response: $response');
+        }
+      }
+      else if (response is int) {
+        return response;
+      }
+      else if (response is String) {
+        try {
+          return int.parse(response);
+        } catch (e) {
+          throw Exception('Failed to parse response as integer: $response');
+        }
+      }
+
+      throw Exception('Unexpected response format: $response');
     } catch (e) {
+      print("Error in createCheckBook: $e");
       throw Exception('Failed to create check book: $e');
     }
   }
@@ -1673,6 +1674,7 @@ class OdooService {
           ], // Filter by ID
           'fields': [
             'name', // Giro number
+            'receive_date',
             'date', // Giro date
             'date_end', // Giro expiry date
             'check_amount', // Amount
