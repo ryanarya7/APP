@@ -31,6 +31,7 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
   Map<String, dynamic>? selectedPaymentTerm;
   Map<String, dynamic>? selectedWarehouse;
   TextEditingController vatController = TextEditingController();
+  TextEditingController notesController = TextEditingController();
 
   @override
   void initState() {
@@ -47,30 +48,41 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
 
       setState(() {
         customers = fetchedCustomers.cast<Map<String, dynamic>>();
+        print('Jumlah customer: ${customers.length}');
         salespersons = fetchedSalespersons.cast<Map<String, dynamic>>();
         paymentTerms = fetchedPaymentTerms.cast<Map<String, dynamic>>();
         warehouses = fetchedWarehouses.cast<Map<String, dynamic>>();
 
+        // Cari item berdasarkan ID yang valid
+        final partnerId = safeExtractFirst(widget.initialData['partner_id']);
         selectedCustomer = customers.firstWhere(
-          (c) => c['id'] == widget.initialData['partner_id']?[0],
-          orElse: () => {},
+          (c) => c['id'] == partnerId,
+          orElse: () => {}, // ✅ Kembalikan Map kosong
         );
 
+        final userMemberId =
+            safeExtractFirst(widget.initialData['user_member_id']);
         selectedSalesperson = salespersons.firstWhere(
-          (s) => s['id'] == widget.initialData['user_member_id']?[0],
+          (s) => s['id'] == userMemberId,
           orElse: () => {},
         );
 
+        final paymentTermId =
+            safeExtractFirst(widget.initialData['payment_term_id']);
         selectedPaymentTerm = paymentTerms.firstWhere(
-          (p) => p['id'] == widget.initialData['payment_term_id']?[0],
+          (p) => p['id'] == paymentTermId,
           orElse: () => {},
         );
 
+        final warehouseId =
+            safeExtractFirst(widget.initialData['warehouse_id']);
         selectedWarehouse = warehouses.firstWhere(
-          (w) => w['id'] == widget.initialData['warehouse_id']?[0],
+          (w) => w['id'] == warehouseId,
           orElse: () => {},
         );
 
+        // Pastikan notesController aman
+        notesController.text = widget.initialData['notes']?.toString() ?? '';
         vatController.text = _getValidVat(selectedCustomer?['vat']);
       });
 
@@ -78,23 +90,31 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
       if (selectedCustomer != null) {
         await _loadAddresses(selectedCustomer!['id'], isInitialLoad: true);
       }
-    } catch (e) {
+    } catch (e, stackTrace) {
+      // Log error untuk debugging
+      print('Error loading data: $e\n$stackTrace');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error loading data: $e')),
       );
     }
   }
 
+  dynamic safeExtractFirst(dynamic value) {
+    if (value is List && value.isNotEmpty) {
+      return value.first;
+    }
+    return null; // Jika bukan List atau kosong, kembalikan null
+  }
+
   Future<void> _fetchInitialAddresses() async {
     try {
-      final customerId = widget.initialData['partner_id']?[0];
-      if (customerId == null) {
-        throw Exception('Customer ID is missing from initial data');
+      final customerId = safeExtractFirst(widget.initialData['partner_id']);
+      if (customerId is! int) {
+        throw Exception('Customer ID is missing or invalid');
       }
 
       final fetchedAddresses =
           await widget.odooService.fetchCustomerAddresses(customerId);
-
       if (!mounted) return;
 
       setState(() {
@@ -107,14 +127,20 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
           ...fetchedAddresses.where((a) => a['type'] == 'delivery').toList(),
         ];
 
-        selectedInvoiceAddress = invoiceAddresses.firstWhere(
-          (a) => a['id'] == widget.initialData['partner_invoice_id']?[0],
-          orElse: () => invoiceAddresses.first,
-        );
-        selectedDeliveryAddress = deliveryAddresses.firstWhere(
-          (a) => a['id'] == widget.initialData['partner_shipping_id']?[0],
-          orElse: () => deliveryAddresses.first,
-        );
+        final partnerInvoiceId =
+            safeExtractFirst(widget.initialData['partner_invoice_id']);
+        final partnerShippingId =
+            safeExtractFirst(widget.initialData['partner_shipping_id']);
+
+        selectedInvoiceAddress = partnerInvoiceId != null
+            ? invoiceAddresses.firstWhere((a) => a['id'] == partnerInvoiceId,
+                orElse: () => invoiceAddresses.first)
+            : invoiceAddresses.first;
+
+        selectedDeliveryAddress = partnerShippingId != null
+            ? deliveryAddresses.firstWhere((a) => a['id'] == partnerShippingId,
+                orElse: () => deliveryAddresses.first)
+            : deliveryAddresses.first;
 
         _updatevat(selectedInvoiceAddress);
       });
@@ -225,12 +251,13 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
     final headerData = {
       'partner_id': selectedCustomer?['id'],
       'partner_invoice_id':
-          selectedInvoiceAddress?['id'] ?? (selectedCustomer?['id']),
+          selectedInvoiceAddress?['id'] ?? selectedCustomer?['id'],
       'partner_shipping_id':
-          selectedDeliveryAddress?['id'] ?? (selectedCustomer?['id']),
+          selectedDeliveryAddress?['id'] ?? selectedCustomer?['id'],
       'user_member_id': selectedSalesperson?['id'],
       'payment_term_id': selectedPaymentTerm?['id'],
       'warehouse_id': selectedWarehouse?['id'],
+      'notes': notesController.text,
     };
     final vatValue = vatController.text.trim();
     if (vatValue.isEmpty ||
@@ -309,6 +336,28 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
     );
   }
 
+  Widget _buildNotesField() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Notes",
+          style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+        ),
+        const SizedBox(height: 8),
+        TextField(
+          controller: notesController,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            hintText: 'Enter notes...',
+          ),
+          style: const TextStyle(fontSize: 12),
+          maxLines: 3, // Allow multiple lines for notes
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -375,6 +424,8 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
               selectedItem: selectedWarehouse,
               onChanged: (value) => setState(() => selectedWarehouse = value),
             ),
+            const SizedBox(height: 5),
+            _buildNotesField(),
             const SizedBox(height: 5),
           ],
         ),

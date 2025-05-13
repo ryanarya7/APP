@@ -7,6 +7,29 @@ class ProductDetailScreen extends StatelessWidget {
 
   const ProductDetailScreen({super.key, required this.product});
 
+  String _formatQtyAvailable(dynamic value) {
+    if (value == null) return '0';
+
+    if (value is int) {
+      return value.toString();
+    } else if (value is double) {
+      // Jika angka seperti 10.0, kembalikan sebagai integer
+      if (value == value.toInt()) {
+        return value.toInt().toString();
+      } else {
+        return value.toString();
+      }
+    } else if (value is String) {
+      // Jika ternyata nilainya string, coba parse ke number
+      final numVal = num.tryParse(value);
+      if (numVal != null) {
+        return numVal.toInt().toString();
+      }
+    }
+
+    return '0'; // Default jika tidak cocok semua
+  }
+
   @override
   Widget build(BuildContext context) {
     // Deklarasi Formatter Mata Uang
@@ -78,7 +101,7 @@ class ProductDetailScreen extends StatelessWidget {
 
                   // Ketersediaan Produk
                   Text(
-                    'Available Products: ${product['qty_available']}',
+                    'Available Products: ${_formatQtyAvailable(product['qty_available'])}',
                     style: const TextStyle(fontSize: 14, color: Colors.black87),
                   ),
                   const SizedBox(height: 16),

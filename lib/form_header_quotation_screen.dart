@@ -19,7 +19,7 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
   List<Map<String, dynamic>> globalAddresses = [];
   List<Map<String, dynamic>> filteredInvoiceAddresses = [];
   List<Map<String, dynamic>> filteredDeliveryAddresses = [];
-  String notes = ''; 
+  String notes = '';
 
   Map<String, dynamic>? selectedCustomer;
   Map<String, dynamic>? selectedSalesperson;
@@ -49,6 +49,7 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
 
       setState(() {
         customers = fetchedCustomers;
+        print('Jumlah customer: ${customers.length}');
         salespersons = fetchedSalespersons;
         paymentTerms = fetchedPaymentTerms;
         warehouses = fetchedWarehouses;
@@ -399,35 +400,35 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
               ),
               const SizedBox(height: 16),
               Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  "Notes",
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                TextField(
-                  decoration: InputDecoration(
-                    filled: true,
-                    fillColor: Colors.white,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    "Notes",
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black,
                     ),
                   ),
-                  maxLines: 3, // Allow multiple lines for notes
-                  onChanged: (value) {
-                    setState(() {
-                      notes = value;
-                    });
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
+                  const SizedBox(height: 8),
+                  TextField(
+                    decoration: InputDecoration(
+                      filled: true,
+                      fillColor: Colors.white,
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    maxLines: 3, // Allow multiple lines for notes
+                    onChanged: (value) {
+                      setState(() {
+                        notes = value;
+                      });
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
               Center(
                 child: ElevatedButton(
                   onPressed: _saveHeader,

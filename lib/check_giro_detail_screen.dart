@@ -70,9 +70,9 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     // Controllers for form fields
     final TextEditingController giroNumberController = TextEditingController();
     int? selectedBankId;
-    DateTime receiveDate = DateTime.now();
-    DateTime giroDate = DateTime.now();
-    DateTime giroExpiredDate = DateTime.now();
+    DateTime? receiveDate;
+    DateTime? giroDate;
+    DateTime? giroExpiredDate;
     final TextEditingController amountController = TextEditingController();
 
     showDialog(
@@ -99,7 +99,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Giro Number
+                  // Giro Number - Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -108,7 +108,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Number",
+                        "Giro Number *",
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: TextFormField(
@@ -127,7 +127,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Bank Selection
+                  // Bank Selection - Optional
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -177,6 +177,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
+                  // Receive Date - Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -185,31 +186,30 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Receive Date",
+                        "Receive Date *",
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(receiveDate),
-                        style: const TextStyle(
+                        receiveDate == null
+                            ? "Select date"
+                            : DateFormat('dd-MM-yyyy').format(receiveDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color:
+                              receiveDate == null ? Colors.grey : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: receiveDate,
+                          initialDate: DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != receiveDate) {
+                        if (picked != null) {
                           receiveDate = picked;
-                          // Make sure expired date is not before giro date
-                          if (giroExpiredDate.isBefore(receiveDate)) {
-                            giroExpiredDate =
-                                receiveDate.add(const Duration(days: 30));
-                          }
                           (context as Element).markNeedsBuild();
                         }
                       },
@@ -218,7 +218,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Giro Date
+                  // Giro Date - Optional
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -231,29 +231,32 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(giroDate),
-                        style: const TextStyle(
+                        giroDate == null
+                            ? "Select date"
+                            : DateFormat('dd-MM-yyyy').format(giroDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: giroDate == null ? Colors.grey : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: giroDate,
+                          initialDate: DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != giroDate) {
-                          setState(() {
-                            giroDate = picked;
-                            // Make sure expired date is not before giro date
-                            if (giroExpiredDate.isBefore(giroDate)) {
-                              giroExpiredDate =
-                                  giroDate.add(const Duration(days: 30));
-                            }
-                          });
+                        if (picked != null) {
+                          giroDate = picked;
+
+                          if (giroExpiredDate != null &&
+                              giroExpiredDate!.isBefore(giroDate!)) {
+                            giroExpiredDate = null;
+                          }
+
+                          (context as Element).markNeedsBuild();
                         }
                       },
                     ),
@@ -261,7 +264,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Giro Expired Date
+                  // Giro Expired Date - Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -270,28 +273,45 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Expired Date",
+                        "Giro Expired Date *",
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(giroExpiredDate),
-                        style: const TextStyle(
+                        giroExpiredDate == null
+                            ? "Select date"
+                            : DateFormat('dd-MM-yyyy').format(giroExpiredDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: giroExpiredDate == null
+                              ? Colors.grey
+                              : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: giroExpiredDate,
-                          firstDate: giroDate, // Cannot be before giro date
+                          initialDate: DateTime.now(),
+                          firstDate: giroDate ??
+                              DateTime(
+                                  2000), // If giroDate is set, can't be earlier
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != giroExpiredDate) {
-                          setState(() {
+                        if (picked != null) {
+                          // Logic check: Ensure expiry date isn't before giro date
+                          if (giroDate != null && picked.isBefore(giroDate!)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Expired date cannot be before giro date'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
                             giroExpiredDate = picked;
-                          });
+                            (context as Element).markNeedsBuild();
+                          }
                         }
                       },
                     ),
@@ -299,7 +319,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Amount
+                  // Amount - Optional but with default
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -342,7 +362,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       const SizedBox(width: 16),
                       ElevatedButton(
                         onPressed: () {
-                          // Validate inputs
+                          // Validate only mandatory inputs
                           if (giroNumberController.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -353,20 +373,20 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                             return;
                           }
 
-                          if (selectedBankId == null) {
+                          if (receiveDate == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Please select a bank'),
+                                content: Text('Please select a receive date'),
                                 backgroundColor: Colors.red,
                               ),
                             );
                             return;
                           }
 
-                          if (amountController.text.isEmpty) {
+                          if (giroExpiredDate == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
-                                content: Text('Please enter an amount'),
+                                content: Text('Please select an expiry date'),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -376,10 +396,14 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                           // Create the line
                           _createLine(
                             giroNumberController.text,
-                            selectedBankId!,
-                            giroDate,
-                            giroExpiredDate,
-                            double.tryParse(amountController.text) ?? 0.0,
+                            selectedBankId, // Can be null
+                            receiveDate!,
+                            giroDate, // Can be null
+                            giroExpiredDate!,
+                            amountController.text.isEmpty
+                                ? 0.0
+                                : (double.tryParse(amountController.text) ??
+                                    0.0),
                           );
 
                           Navigator.of(context).pop();
@@ -401,18 +425,25 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     );
   }
 
-  void _createLine(String giroNumber, int bankId, DateTime giroDate,
-      DateTime giroExpiredDate, double amount) {
+  void _createLine(String giroNumber, int? bankId, DateTime receiveDate,
+      DateTime? giroDate, DateTime giroExpiredDate, double amount) {
     // Create the values map for the new line
     Map<String, dynamic> values = {
       'checkbook_id': widget.checkBookId,
       'name': giroNumber,
-      'partner_bank_id': bankId,
-      'receive_date': DateFormat('yyyy-MM-dd').format(giroDate),
-      'date': DateFormat('yyyy-MM-dd').format(giroDate),
+      'receive_date': DateFormat('yyyy-MM-dd').format(receiveDate),
       'date_end': DateFormat('yyyy-MM-dd').format(giroExpiredDate),
       'check_amount': amount,
     };
+
+    // Add optional fields only if they have values
+    if (bankId != null) {
+      values['partner_bank_id'] = bankId;
+    }
+
+    if (giroDate != null) {
+      values['date'] = DateFormat('yyyy-MM-dd').format(giroDate);
+    }
 
     // Call the API to create the line
     widget.odooService.createCheckBookLine(values).then((_) {
@@ -431,12 +462,6 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
       );
     }).catchError((error) {
       // Show error message
-      // ScaffoldMessenger.of(context).showSnackBar(
-      //   SnackBar(
-      //     content: Text('Failed to create giro line: $error'),
-      //     backgroundColor: Colors.red,
-      //   ),
-      // );
       String errorMessage = 'Failed to create giro line: $error';
       if (error.toString().contains('Giro Number must be unique per Company')) {
         errorMessage =
@@ -456,27 +481,45 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     final TextEditingController giroNumberController =
         TextEditingController(text: line['name'] ?? '');
     int? selectedBankId;
-    DateTime receiveDate = DateTime.now();
-    DateTime giroDate = DateTime.now();
-    DateTime giroExpiredDate = DateTime.now();
+    DateTime? receiveDate;
+    DateTime? giroDate;
+    DateTime? giroExpiredDate;
     final TextEditingController amountController =
-        TextEditingController(text: (line['check_amount'] ?? 0).toString());
+        TextEditingController(text: (line['check_amount'] ?? 0.0).toString());
 
-    // Initialize values from the line
-    if (line['partner_bank_id'] != null && line['partner_bank_id'] is List) {
+    // Initialize values from the line, handling potential nulls
+    if (line['partner_bank_id'] != null &&
+        line['partner_bank_id'] is List &&
+        line['partner_bank_id'].isNotEmpty) {
       selectedBankId = line['partner_bank_id'][0] as int?;
     }
 
-    if (line['receive_date'] != null) {
-      receiveDate = DateTime.parse(line['receive_date']);
+    if (line['receive_date'] != null &&
+        line['receive_date'].toString().isNotEmpty) {
+      try {
+        receiveDate = DateTime.parse(line['receive_date']);
+      } catch (e) {
+        // Handle parsing error if date is not in correct format
+        print("Error parsing receive_date: $e");
+      }
     }
 
-    if (line['date'] != null) {
-      giroDate = DateTime.parse(line['date']);
+    if (line['date'] != null && line['date'].toString().isNotEmpty) {
+      try {
+        giroDate = DateTime.parse(line['date']);
+      } catch (e) {
+        // Handle parsing error if date is not in correct format
+        print("Error parsing date: $e");
+      }
     }
 
-    if (line['date_end'] != null) {
-      giroExpiredDate = DateTime.parse(line['date_end']);
+    if (line['date_end'] != null && line['date_end'].toString().isNotEmpty) {
+      try {
+        giroExpiredDate = DateTime.parse(line['date_end']);
+      } catch (e) {
+        // Handle parsing error if date is not in correct format
+        print("Error parsing date_end: $e");
+      }
     }
 
     showDialog(
@@ -503,7 +546,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                   ),
                   const SizedBox(height: 16),
 
-                  // Giro Number (Read-only)
+                  // Giro Number
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -512,7 +555,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Number",
+                        "Giro Number *", // Added asterisk to indicate required field
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: TextFormField(
@@ -531,7 +574,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Bank Selection
+                  // Bank Selection (Optional)
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -555,24 +598,31 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         final bankList = snapshot.data ?? [];
                         return ListTile(
                           title: const Text(
-                            "Bank Penerbit",
+                            "Bank Penerbit", // Removed asterisk as it's optional
                             style: TextStyle(fontSize: 14),
                           ),
-                          subtitle: DropdownButton<int>(
+                          subtitle: DropdownButton<int?>(
                             value: selectedBankId,
                             isExpanded: true,
-                            hint: const Text("Select Bank"),
+                            hint: const Text("Select Bank (Optional)"),
                             onChanged: (int? newValue) {
                               selectedBankId = newValue;
                               (context as Element).markNeedsBuild();
                             },
-                            items: bankList.map<DropdownMenuItem<int>>((bank) {
-                              return DropdownMenuItem<int>(
-                                value: bank['id'] as int,
-                                child: Text(
-                                    "${bank['bank_name'] ?? 'Unknown'} - ${bank['acc_number'] ?? ''}"),
-                              );
-                            }).toList(),
+                            items: [
+                              // Add a null option to allow clearing selection
+                              const DropdownMenuItem<int?>(
+                                value: null,
+                                child: Text("None"),
+                              ),
+                              ...bankList.map<DropdownMenuItem<int>>((bank) {
+                                return DropdownMenuItem<int>(
+                                  value: bank['id'] as int,
+                                  child: Text(
+                                      "${bank['bank_name'] ?? 'Unknown'} - ${bank['acc_number'] ?? ''}"),
+                                );
+                              }).toList(),
+                            ],
                           ),
                         );
                       },
@@ -581,6 +631,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
+                  // Receive Date
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -589,25 +640,29 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Receive Date",
+                        "Receive Date *", // Added asterisk to indicate required field
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(receiveDate),
-                        style: const TextStyle(
+                        receiveDate == null
+                            ? "Select date"
+                            : DateFormat('dd-MM-yyyy').format(receiveDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color:
+                              receiveDate == null ? Colors.grey : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: receiveDate,
+                          initialDate: receiveDate ?? DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != receiveDate) {
+                        if (picked != null) {
                           receiveDate = picked;
                           (context as Element).markNeedsBuild();
                         }
@@ -617,7 +672,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Giro Date
+                  // Giro Date (Optional)
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -626,30 +681,32 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Date",
+                        "Giro Date", // Removed asterisk as it's optional
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(giroDate),
-                        style: const TextStyle(
+                        giroDate == null
+                            ? "Select date (Optional)"
+                            : DateFormat('dd-MM-yyyy').format(giroDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: giroDate == null ? Colors.grey : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: giroDate,
+                          initialDate: DateTime.now(),
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != giroDate) {
+                        if (picked != null) {
                           giroDate = picked;
-                          // Make sure expired date is not before giro date
-                          if (giroExpiredDate.isBefore(giroDate)) {
-                            giroExpiredDate =
-                                giroDate.add(const Duration(days: 30));
+                          if (giroExpiredDate != null &&
+                              giroExpiredDate!.isBefore(giroDate!)) {
+                            giroExpiredDate = null;
                           }
                           (context as Element).markNeedsBuild();
                         }
@@ -668,27 +725,45 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Expired Date",
+                        "Giro Expired Date *", // Added asterisk to indicate required field
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
-                        DateFormat('dd-MM-yyyy').format(giroExpiredDate),
-                        style: const TextStyle(
+                        giroExpiredDate == null
+                            ? "Select date"
+                            : DateFormat('dd-MM-yyyy').format(giroExpiredDate!),
+                        style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
+                          color: giroExpiredDate == null
+                              ? Colors.grey
+                              : Colors.black,
                         ),
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: giroExpiredDate,
-                          firstDate: giroDate, // Cannot be before giro date
+                          initialDate: DateTime.now(),
+                          firstDate: giroDate ??
+                              DateTime(
+                                  2000), // If giroDate is set, can't be earlier
                           lastDate: DateTime(2100),
                         );
-                        if (picked != null && picked != giroExpiredDate) {
-                          giroExpiredDate = picked;
-                          (context as Element).markNeedsBuild();
+                        if (picked != null) {
+                          // Logic check: Ensure expiry date isn't before giro date
+                          if (giroDate != null && picked.isBefore(giroDate!)) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Expired date cannot be before giro date'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                          } else {
+                            giroExpiredDate = picked;
+                            (context as Element).markNeedsBuild();
+                          }
                         }
                       },
                     ),
@@ -696,7 +771,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Amount
+                  // Amount (Optional)
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -705,7 +780,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Amount",
+                        "Amount", // Removed asterisk as it's optional
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: TextFormField(
@@ -713,7 +788,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         keyboardType: TextInputType.number,
                         decoration: const InputDecoration(
                           prefixText: 'Rp ',
-                          hintText: 'Enter amount',
+                          hintText: 'Enter amount (Optional)',
                           border: InputBorder.none,
                         ),
                         style: const TextStyle(
@@ -724,8 +799,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                   ),
 
-                  const SizedBox(height: 20),
-
+                  const SizedBox(height: 16),
                   // Buttons
                   Row(
                     mainAxisAlignment: MainAxisAlignment.end,
@@ -739,18 +813,64 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       const SizedBox(width: 16),
                       ElevatedButton(
                         onPressed: () {
-                          // Save the changes
+                          // Validate only the mandatory fields
+                          if (giroNumberController.text.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter a giro number'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (receiveDate == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please select a receive date'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (giroExpiredDate == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content:
+                                    Text('Please select a giro expired date'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          // Create map with only the mandatory fields
                           Map<String, dynamic> updatedValues = {
                             'name': giroNumberController.text,
-                            'partner_bank_id': selectedBankId,
                             'receive_date':
-                                DateFormat('yyyy-MM-dd').format(receiveDate),
-                            'date': DateFormat('yyyy-MM-dd').format(giroDate),
+                                DateFormat('yyyy-MM-dd').format(receiveDate!),
                             'date_end': DateFormat('yyyy-MM-dd')
-                                .format(giroExpiredDate),
-                            'check_amount':
-                                double.tryParse(amountController.text) ?? 0.0,
+                                .format(giroExpiredDate!),
                           };
+
+                          // Add optional fields only if they have values
+                          if (selectedBankId != null) {
+                            updatedValues['partner_bank_id'] = selectedBankId;
+                          }
+
+                          if (giroDate != null) {
+                            updatedValues['date'] =
+                                DateFormat('yyyy-MM-dd').format(giroDate!);
+                          }
+
+                          if (amountController.text.isNotEmpty) {
+                            updatedValues['check_amount'] =
+                                double.tryParse(amountController.text) ?? 0.0;
+                          } else {
+                            updatedValues['check_amount'] =
+                                0.0; // Ensure amount is always sent as 0 if empty
+                          }
 
                           _updateLine(line['id'], updatedValues);
                           Navigator.of(context).pop();
@@ -798,62 +918,62 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     });
   }
 
-  void _showDeleteConfirmation(int lineId) {
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text("Delete Giro Line"),
-          content: const Text(
-              "Are you sure you want to delete this giro line? This action cannot be undone."),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop(); // Close dialog
-              },
-              child: const Text("Cancel"),
-            ),
-            TextButton(
-              onPressed: () {
-                _deleteLine(lineId);
-                Navigator.of(context).pop();
-              },
-              style: TextButton.styleFrom(
-                foregroundColor: Colors.red,
-              ),
-              child: const Text("Delete"),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  // void _showDeleteConfirmation(int lineId) {
+  //   showDialog(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return AlertDialog(
+  //         title: const Text("Delete Giro Line"),
+  //         content: const Text(
+  //             "Are you sure you want to delete this giro line? This action cannot be undone."),
+  //         actions: [
+  //           TextButton(
+  //             onPressed: () {
+  //               Navigator.of(context).pop(); // Close dialog
+  //             },
+  //             child: const Text("Cancel"),
+  //           ),
+  //           TextButton(
+  //             onPressed: () {
+  //               _deleteLine(lineId);
+  //               Navigator.of(context).pop();
+  //             },
+  //             style: TextButton.styleFrom(
+  //               foregroundColor: Colors.red,
+  //             ),
+  //             child: const Text("Delete"),
+  //           ),
+  //         ],
+  //       );
+  //     },
+  //   );
+  // }
 
-  void _deleteLine(int lineId) {
-    widget.odooService.deleteCheckBookLine(lineId).then((_) {
-      // Reload data after delete
-      setState(() {
-        _loadCheckBookDetails();
-        _loadCheckBookLines();
-      });
+  // void _deleteLine(int lineId) {
+  //   widget.odooService.deleteCheckBookLine(lineId).then((_) {
+  //     // Reload data after delete
+  //     setState(() {
+  //       _loadCheckBookDetails();
+  //       _loadCheckBookLines();
+  //     });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Giro line deleted successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }).catchError((error) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to delete giro line: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    });
-  }
+  //     // Show success message
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(
+  //         content: Text('Giro line deleted successfully'),
+  //         backgroundColor: Colors.green,
+  //       ),
+  //     );
+  //   }).catchError((error) {
+  //     // Show error message
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         content: Text('Failed to delete giro line: $error'),
+  //         backgroundColor: Colors.red,
+  //       ),
+  //     );
+  //   });
+  // }
 
   void _showEditHeaderDialog(Map<String, dynamic> checkBook) {
     // Extracting current values from checkBook for the form
@@ -1554,28 +1674,15 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                   },
                                   children: [
                                     _buildInfoRow(
-                                        "Giro No", line['name'] ?? ''),
+                                        "Giro No", _getSafeValue(line['name'])),
                                     _buildInfoRow("Bank Penerbit",
                                         _getSafeValue(line['partner_bank_id'])),
-                                    _buildInfoRow(
-                                      "Receive Date",
-                                      line['receive_date'] != null &&
-                                              line['receive_date'] is String
-                                          ? DateFormat('dd-MM-yyyy').format(
-                                              DateTime.parse(
-                                                  line['receive_date']))
-                                          : "",
-                                    ),
-                                    _buildInfoRow(
-                                        "Giro Date",
-                                        DateFormat('dd-MM-yyyy').format(
-                                            DateTime.parse(
-                                                line['date'] ?? ''))),
-                                    _buildInfoRow(
-                                        "Giro Expired",
-                                        DateFormat('dd-MM-yyyy').format(
-                                            DateTime.parse(
-                                                line['date_end'] ?? ''))),
+                                    _buildInfoRow("Receive Date",
+                                        _getSafeValue(line['receive_date'])),
+                                    _buildInfoRow("Giro Date",
+                                        _getSafeValue(line['date'])),
+                                    _buildInfoRow("Giro Expired",
+                                        _getSafeValue(line['date_end'])),
                                     _buildInfoRow(
                                         "Amount",
                                         currencyFormatter
@@ -1584,10 +1691,8 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                         "Residual",
                                         currencyFormatter.format(
                                             line['check_residual'] ?? 0)),
-                                    _buildInfoRow(
-                                      "Payment",
-                                      line['payment_names'] ?? '',
-                                    ),
+                                    _buildInfoRow("Payment",
+                                        _getSafeValue(line['payment_names'])),
                                     _buildStatusRow(
                                       "Status",
                                       _getLineStatus(line['state'] ?? ''),
@@ -1619,14 +1724,14 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                             _showEditLineDialog(line);
                                           },
                                         ),
-                                      if (line['payment_status'] == 'no')
-                                        IconButton(
-                                          icon: const Icon(Icons.delete,
-                                              color: Colors.red, size: 20),
-                                          onPressed: () {
-                                            _showDeleteConfirmation(line['id']);
-                                          },
-                                        ),
+                                      // if (line['payment_status'] == 'no')
+                                      //   IconButton(
+                                      //     icon: const Icon(Icons.delete,
+                                      //         color: Colors.red, size: 20),
+                                      //     onPressed: () {
+                                      //       _showDeleteConfirmation(line['id']);
+                                      //     },
+                                      //   ),
                                     ],
                                   ),
                                 ),
@@ -1674,8 +1779,10 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     );
   }
 
-  TableRow _buildInfoRow(String label, String value) {
-    // Implementation remains the same
+  TableRow _buildInfoRow(String label, dynamic value) {
+    // Pastikan nilai value adalah string yang valid
+    String safeValue = _getSafeValue(value);
+
     return TableRow(
       children: [
         Padding(
@@ -1692,7 +1799,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 4.0),
           child: Text(
-            value,
+            safeValue,
             style: const TextStyle(fontSize: 12),
           ),
         ),
@@ -1768,17 +1875,26 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
   }
 
   String _getSafeValue(dynamic value) {
-    // Implementation remains the same
-    if (value is List && value.isNotEmpty) {
-      return value[1]?.toString() ?? 'N/A';
-    }
     if (value == null) {
-      return 'N/A';
+      return ''; // Placeholder untuk nilai null
     }
     if (value is bool) {
-      return value ? 'Yes' : 'No';
+      return value ? 'Yes' : ''; // Handle boolean values
     }
-    return value.toString();
+    if (value is String && value.isNotEmpty) {
+      try {
+        // Coba parse sebagai tanggal
+        final parsedDate = DateTime.parse(value);
+        return DateFormat('dd-MM-yyyy').format(parsedDate);
+      } catch (e) {
+        // Jika gagal parsing, kembalikan nilai asli
+        return value;
+      }
+    }
+    if (value is List && value.isNotEmpty) {
+      return value[1]?.toString() ?? ''; // Handle list values
+    }
+    return value.toString(); // Default to string representation
   }
 
   String _getPaymentTypeDisplay(String? paymentType) {

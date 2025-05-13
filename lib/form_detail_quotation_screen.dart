@@ -90,55 +90,57 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
             initialValue: product['list_price'] ?? 0.0,
             precision: 2,
           ),
+          'notes': '',
+          'notes_controller': TextEditingController(),
           'display_type': null,
         });
       }
     });
   }
 
-  void _addNote() {
-    _noteController.clear(); // Clear previous note text
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return AlertDialog(
-          title: const Text('Add a Note'),
-          content: TextField(
-            controller: _noteController,
-            decoration: const InputDecoration(
-              hintText: 'Enter your note here',
-              border: OutlineInputBorder(),
-            ),
-            maxLines: 3,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                // Add the note to quotation lines
-                if (_noteController.text.isNotEmpty) {
-                  setState(() {
-                    quotationLines.add({
-                      'name': _noteController.text,
-                      'display_type': 'line_note', // This is crucial for Odoo
-                      // Note: Don't include product_id, product_uom, or other product-related fields
-                    });
-                  });
-                }
-                Navigator.of(context).pop();
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  // void _addNote() {
+  //   _noteController.clear(); // Clear previous note text
+  //   showDialog(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return AlertDialog(
+  //         title: const Text('Add a Note'),
+  //         content: TextField(
+  //           controller: _noteController,
+  //           decoration: const InputDecoration(
+  //             hintText: 'Enter your note here',
+  //             border: OutlineInputBorder(),
+  //           ),
+  //           maxLines: 3,
+  //         ),
+  //         actions: [
+  //           TextButton(
+  //             onPressed: () {
+  //               Navigator.of(context).pop();
+  //             },
+  //             child: const Text('Cancel'),
+  //           ),
+  //           TextButton(
+  //             onPressed: () {
+  //               // Add the note to quotation lines
+  //               if (_noteController.text.isNotEmpty) {
+  //                 setState(() {
+  //                   quotationLines.add({
+  //                     'name': _noteController.text,
+  //                     'display_type': 'line_note', // This is crucial for Odoo
+  //                     // Note: Don't include product_id, product_uom, or other product-related fields
+  //                   });
+  //                 });
+  //               }
+  //               Navigator.of(context).pop();
+  //             },
+  //             child: const Text('Add'),
+  //           ),
+  //         ],
+  //       );
+  //     },
+  //   );
+  // }
 
   void _updateQuantity(int index, int delta) {
     setState(() {
@@ -234,6 +236,9 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
         // Update price_unit dengan nilai dari controller
         currentLine['price_unit'] = controllerValue;
       }
+      if (currentLine.containsKey('notes_controller')) {
+        currentLine['notes'] = currentLine['notes_controller'].text;
+      }
     }
 
     // Jika ada harga yang tidak valid, tampilkan dialog
@@ -271,6 +276,9 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
         if (cleanLine.containsKey('price_controller')) {
           cleanLine.remove('price_controller');
         }
+        if (cleanLine.containsKey('notes_controller')) {
+          cleanLine.remove('notes_controller');
+        }
 
         await widget.odooService
             .addQuotationLine(widget.headerData['quotationId'], cleanLine);
@@ -297,6 +305,28 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     symbol: 'Rp ', // Simbol Rupiah
     decimalDigits: 2,
   );
+
+  String _formatQty(dynamic value) {
+    if (value == null) return '0';
+
+    if (value is int) {
+      return value.toString();
+    } else if (value is double) {
+      // Jika nilainya seperti 10.0, ubah jadi 10
+      if (value == value.toInt()) {
+        return value.toInt().toString();
+      }
+      return value.toString();
+    } else if (value is String) {
+      // Jika berupa string, coba parse ke number
+      final numVal = num.tryParse(value);
+      if (numVal != null) {
+        return numVal.toInt().toString();
+      }
+    }
+
+    return '0'; // Default jika tidak cocok semua
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -356,7 +386,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                         ),
                       ),
                       subtitle: Text(
-                          "${currencyFormatter.format(product['list_price'])} | Available: ${product['qty_available']}",
+                          "${currencyFormatter.format(product['list_price'])} | Available: ${_formatQty(product['qty_available'])}",
                           style: const TextStyle(
                             fontSize: 12,
                           )),
@@ -380,11 +410,11 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                       fontWeight: FontWeight.bold,
                     )),
                 // Add Note button
-                IconButton(
-                  icon: const Icon(Icons.note_add, color: Colors.blue),
-                  tooltip: 'Add a note',
-                  onPressed: _addNote,
-                ),
+                // IconButton(
+                //   icon: const Icon(Icons.note_add, color: Colors.blue),
+                //   tooltip: 'Add a note',
+                //   onPressed: _addNote,
+                // ),
               ],
             ),
             const SizedBox(height: 8),
@@ -561,7 +591,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                   ),
                                   // Kuantitas
                                   SizedBox(
-                                    width: 50,
+                                    width: 40,
                                     child: TextField(
                                       controller: TextEditingController(
                                         text: (line['product_uom_qty'] ?? 0)
@@ -570,7 +600,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                       keyboardType: TextInputType.number,
                                       textAlign: TextAlign.center,
                                       style: const TextStyle(
-                                        fontSize: 12,
+                                        fontSize: 11,
                                       ),
                                       decoration: const InputDecoration(
                                         border: InputBorder.none,
@@ -613,6 +643,32 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                 ],
                               ),
                             ],
+                          ),
+                          // Tambahkan field notes di bawah
+                          const SizedBox(height: 8),
+                          Container(
+                            width: double.infinity,
+                            child: TextField(
+                              controller: line['notes_controller'] ??
+                                  TextEditingController(),
+                              decoration: const InputDecoration(
+                                hintText: "Add notes for this product...",
+                                prefixIcon: Icon(Icons.notes,
+                                    size: 16, color: Colors.grey),
+                                hintStyle: TextStyle(
+                                    fontSize: 12, fontStyle: FontStyle.italic),
+                                isDense: true,
+                                contentPadding:
+                                    EdgeInsets.symmetric(vertical: 8.0),
+                                border: UnderlineInputBorder(),
+                              ),
+                              style: const TextStyle(fontSize: 12),
+                              onChanged: (value) {
+                                setState(() {
+                                  quotationLines[index]['notes'] = value;
+                                });
+                              },
+                            ),
                           ),
                         ],
                       ),

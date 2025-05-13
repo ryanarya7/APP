@@ -1,7 +1,10 @@
+// ignore_for_file: unused_local_variable
+
 import 'package:flutter/material.dart';
 import 'dart:convert';
 import 'odoo_service.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter/services.dart';
 import 'edit_header_dialog.dart';
 
 class QuotationDetailScreen extends StatefulWidget {
@@ -95,15 +98,25 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             'Loaded tempOrderLines product IDs: ${tempOrderLines.map((e) => e['product_id']).toList()}');
 
         // Reinitialize controllers with the NEW tempOrderLines length
-        _quantityControllers = tempOrderLines
-            .map((line) =>
-                TextEditingController(text: line['product_uom_qty'].toString()))
-            .toList();
+        _quantityControllers = tempOrderLines.map((line) {
+          final qty = line['product_uom_qty'];
+          final initialQty =
+              qty is double ? qty.toInt().toString() : qty.toString();
+          return TextEditingController(text: initialQty);
+        }).toList();
 
         _priceControllers = tempOrderLines
             .map((line) => TextEditingController(
                 text: line['price_unit'].toStringAsFixed(2)))
             .toList();
+
+        for (int i = 0; i < tempOrderLines.length; i++) {
+          if (tempOrderLines[i]['display_type'] != 'line_note') {
+            final noteValue = tempOrderLines[i]['notes'];
+            final noteText = noteValue is String ? noteValue : '';
+            _noteControllers[i] = TextEditingController(text: noteText);
+          }
+        }
       });
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -379,9 +392,18 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
         } else {
           // Create product line
           // Convert product_uom_qty to int explicitly
-          final qty = line['product_uom_qty'] is double
-              ? (line['product_uom_qty'] as double).toInt()
-              : line['product_uom_qty'];
+          final qty = line['product_uom_qty'] is String
+              ? int.tryParse(line['product_uom_qty'] as String) ?? 0
+              : line['product_uom_qty'] is double
+                  ? (line['product_uom_qty'] as double).toInt()
+                  : line['product_uom_qty'] is int
+                      ? line['product_uom_qty']
+                      : 0;
+
+          // Convert notes to string safely
+          final notes = (line['notes'] == null || line['notes'] == false)
+              ? '' // Handle null or false values
+              : line['notes'].toString(); // Convert any other type to string
 
           await widget.odooService.createProductLine(
             widget.quotationId,
@@ -389,6 +411,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             line['name'],
             qty, // Using the converted integer value
             line['price_unit'],
+            notes, // Using the safe string value
           );
         }
       } else {
@@ -402,15 +425,24 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
         } else {
           // Update product line
           // Convert product_uom_qty to int explicitly
-          final qty = line['product_uom_qty'] is double
-              ? (line['product_uom_qty'] as double).toInt()
-              : line['product_uom_qty'];
+          final qty = line['product_uom_qty'] is String
+              ? int.tryParse(line['product_uom_qty'] as String) ?? 0
+              : line['product_uom_qty'] is double
+                  ? (line['product_uom_qty'] as double).toInt()
+                  : line['product_uom_qty'] is int
+                      ? line['product_uom_qty']
+                      : 0;
+
+          // Convert notes to string safely
+          final notes = (line['notes'] == null || line['notes'] == false)
+              ? '' // Handle null or false values
+              : line['notes'].toString(); // Convert any other type to string
 
           await widget.odooService.updateProductLine(
-            line['id'],
-            qty, // Using the converted integer value
-            line['price_unit'],
-          );
+              line['id'],
+              qty, // Using the converted integer value
+              line['price_unit'],
+              notes); // Using the safe string value
         }
       }
     }
@@ -449,6 +481,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
       } else {
         // If product doesn't exist, add a new line
         final price = product['price_unit'];
+        final newIndex = tempOrderLines.length;
 
         tempOrderLines.add({
           'id': null,
@@ -457,6 +490,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
           'product_uom_qty': 1,
           'price_unit': price,
           'original_price': price,
+          'notes': '',
         });
 
         // Add new controllers for the new line
@@ -464,6 +498,7 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
         _priceControllers.add(
           TextEditingController(text: price.toStringAsFixed(2)),
         );
+        _noteControllers[newIndex] = TextEditingController(text: '');
 
         print('Added new product: ${productId}');
       }
@@ -524,6 +559,10 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
       if (tempOrderLines[index]['id'] != null) {
         // Tambahkan ID ke daftar baris yang dihapus
         deletedOrderLines.add(tempOrderLines[index]['id']);
+      }
+      if (_noteControllers.containsKey(index)) {
+        _noteControllers[index]!.dispose();
+        _noteControllers.remove(index);
       }
       // Hapus baris dari daftar terkait
       tempOrderLines.removeAt(index);
@@ -704,59 +743,59 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     super.dispose();
   }
 
-  void _addLineNote() {
-    // Create a text controller for the note
-    final noteController = TextEditingController();
+  // void _addLineNote() {
+  //   // Create a text controller for the note
+  //   final noteController = TextEditingController();
 
-    showDialog(
-      context: context,
-      builder: (context) {
-        return AlertDialog(
-          title: const Text(
-            "Add Note Line",
-            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-          ),
-          content: TextField(
-            controller: noteController,
-            decoration: const InputDecoration(
-              labelText: 'Note Content',
-              hintText: 'Enter your note here...',
-            ),
-            maxLines: 3,
-          ),
-          actions: [
-            TextButton(
-              onPressed: () {
-                Navigator.of(context).pop();
-              },
-              child: const Text('Cancel'),
-            ),
-            TextButton(
-              onPressed: () {
-                if (noteController.text.trim().isNotEmpty) {
-                  setState(() {
-                    tempOrderLines.add({
-                      'id': null,
-                      'display_type': 'line_note',
-                      'name': noteController.text,
-                      'product_uom_qty': 0, // Not needed for notes
-                      'price_unit': 0.0, // Not needed for notes
-                    });
+  //   showDialog(
+  //     context: context,
+  //     builder: (context) {
+  //       return AlertDialog(
+  //         title: const Text(
+  //           "Add Note Line",
+  //           style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+  //         ),
+  //         content: TextField(
+  //           controller: noteController,
+  //           decoration: const InputDecoration(
+  //             labelText: 'Note Content',
+  //             hintText: 'Enter your note here...',
+  //           ),
+  //           maxLines: 3,
+  //         ),
+  //         actions: [
+  //           TextButton(
+  //             onPressed: () {
+  //               Navigator.of(context).pop();
+  //             },
+  //             child: const Text('Cancel'),
+  //           ),
+  //           TextButton(
+  //             onPressed: () {
+  //               if (noteController.text.trim().isNotEmpty) {
+  //                 setState(() {
+  //                   tempOrderLines.add({
+  //                     'id': null,
+  //                     'display_type': 'line_note',
+  //                     'name': noteController.text,
+  //                     'product_uom_qty': 0, // Not needed for notes
+  //                     'price_unit': 0.0, // Not needed for notes
+  //                   });
 
-                    // Add dummy controllers to maintain index consistency
-                    _quantityControllers.add(TextEditingController(text: '0'));
-                    _priceControllers.add(TextEditingController(text: '0.0'));
-                  });
-                  Navigator.of(context).pop();
-                }
-              },
-              child: const Text('Add'),
-            ),
-          ],
-        );
-      },
-    );
-  }
+  //                   // Add dummy controllers to maintain index consistency
+  //                   _quantityControllers.add(TextEditingController(text: '0'));
+  //                   _priceControllers.add(TextEditingController(text: '0.0'));
+  //                 });
+  //                 Navigator.of(context).pop();
+  //               }
+  //             },
+  //             child: const Text('Add'),
+  //           ),
+  //         ],
+  //       );
+  //     },
+  //   );
+  // }
 
   @override
   Widget build(BuildContext context) {
@@ -834,7 +873,6 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             if (!snapshot.hasData) {
               return const Center(child: Text('No data found.'));
             }
-
             final data = snapshot.data!;
             final customerName = data['partner_id']?[1] ?? 'Unknown';
             final deliveryAddress =
@@ -850,12 +888,14 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
             final totalCost = data['amount_total'] ?? 0.0;
             final totalTax = totalCost - untaxedAmount;
             final state = data['state'] ?? 'Unknown';
+
             orderLines = widget.odooService.fetchOrderLines(orderLineIds);
 
-            return Padding(
-              padding: const EdgeInsets.all(16.0),
+            return SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -894,194 +934,122 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                       1: FixedColumnWidth(12), // Kolom titik dua
                     },
                     children: [
-                      TableRow(
-                        children: [
-                          const Text(
-                            'Customer',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            customerName,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      TableRow(
-                        children: [
-                          const Text(
-                            'Invoice Address',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            invoiceAddress,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      TableRow(
-                        children: [
-                          const Text(
-                            'NPWP',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            vat,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      TableRow(
-                        children: [
-                          const Text(
-                            'Delivery Address',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            deliveryAddress,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      TableRow(
-                        children: [
-                          const Text(
-                            'Date',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            dateOrder,
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      TableRow(
-                        children: [
-                          const Text(
-                            'Note',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          const Text(
-                            ' :',
-                            style: TextStyle(fontSize: 12),
-                          ),
-                          Text(
-                            notes ?? '', // Ensure notes is always a string
-                            style: const TextStyle(fontSize: 12),
-                          ),
-                        ],
-                      ),
-                      if (state != 'draft' && state != 'cancel')
-                        TableRow(
-                          children: [
-                            const Text(
-                              'Delivery Order',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            const Text(
-                              ' :',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            FutureBuilder<String>(
-                              future: deliveryOrderStatus,
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Text('Loading...',
-                                      style: TextStyle(fontSize: 12));
-                                }
-                                if (snapshot.hasError) {
-                                  return Text('Error: ${snapshot.error}',
-                                      style: TextStyle(fontSize: 12));
-                                }
-                                final deliveryStatus =
-                                    snapshot.data ?? 'Not Found';
-                                return Wrap(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 0),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(deliveryStatus),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _mapDeliveryStatus(deliveryStatus),
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 12),
-                                      ),
-                                    ),
-                                  ],
-                                );
-                              },
-                            )
-                          ],
+                      TableRow(children: [
+                        const Text('Customer', style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(customerName,
+                            style: const TextStyle(fontSize: 12)),
+                      ]),
+                      TableRow(children: [
+                        const Text('Invoice Address',
+                            style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(invoiceAddress,
+                            style: const TextStyle(fontSize: 12)),
+                      ]),
+                      TableRow(children: [
+                        const Text('NPWP', style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(vat, style: const TextStyle(fontSize: 12)),
+                      ]),
+                      TableRow(children: [
+                        const Text('Delivery Address',
+                            style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(deliveryAddress,
+                            style: const TextStyle(fontSize: 12)),
+                      ]),
+                      TableRow(children: [
+                        const Text('Date', style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(dateOrder, style: const TextStyle(fontSize: 12)),
+                      ]),
+                      TableRow(children: [
+                        const Text('Note', style: TextStyle(fontSize: 12)),
+                        const Text(' :', style: TextStyle(fontSize: 12)),
+                        Text(
+                          (snapshot.data!['notes'] is String)
+                              ? snapshot.data!['notes']
+                              : '',
+                          style: const TextStyle(fontSize: 12),
                         ),
+                      ]),
                       if (state != 'draft' && state != 'cancel')
-                        TableRow(
-                          children: [
-                            const Text(
-                              'Invoice',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            const Text(
-                              ' :',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                            FutureBuilder<String>(
-                              future: invoiceStatus,
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState ==
-                                    ConnectionState.waiting) {
-                                  return const Text('Loading...',
-                                      style: TextStyle(fontSize: 12));
-                                }
-                                if (snapshot.hasError) {
-                                  return const Text('Error',
-                                      style: TextStyle(fontSize: 12));
-                                }
-                                final invoiceState =
-                                    snapshot.data ?? 'Not Found';
-                                return Wrap(
-                                  children: [
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 6, vertical: 0),
-                                      decoration: BoxDecoration(
-                                        color: _getStatusColor(invoiceState),
-                                        borderRadius: BorderRadius.circular(8),
-                                      ),
-                                      child: Text(
-                                        _mapInvoiceStatus(invoiceState),
-                                        style: const TextStyle(
-                                            color: Colors.white, fontSize: 12),
-                                      ),
+                        TableRow(children: [
+                          const Text('Delivery Order',
+                              style: TextStyle(fontSize: 12)),
+                          const Text(' :', style: TextStyle(fontSize: 12)),
+                          FutureBuilder<String>(
+                            future: deliveryOrderStatus,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Text('Loading...',
+                                    style: TextStyle(fontSize: 12));
+                              }
+                              if (snapshot.hasError) {
+                                return Text('Error: ${snapshot.error}',
+                                    style: TextStyle(fontSize: 12));
+                              }
+                              final deliveryStatus =
+                                  snapshot.data ?? 'Not Found';
+                              return Wrap(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 0),
+                                    decoration: BoxDecoration(
+                                      color: _getStatusColor(deliveryStatus),
+                                      borderRadius: BorderRadius.circular(8),
                                     ),
-                                  ],
-                                );
-                              },
-                            ) // Invisible placeholder
-                          ],
-                        ),
+                                    child: Text(
+                                      _mapDeliveryStatus(deliveryStatus),
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          )
+                        ]),
+                      if (state != 'draft' && state != 'cancel')
+                        TableRow(children: [
+                          const Text('Invoice', style: TextStyle(fontSize: 12)),
+                          const Text(' :', style: TextStyle(fontSize: 12)),
+                          FutureBuilder<String>(
+                            future: invoiceStatus,
+                            builder: (context, snapshot) {
+                              if (snapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Text('Loading...',
+                                    style: TextStyle(fontSize: 12));
+                              }
+                              if (snapshot.hasError) {
+                                return const Text('Error',
+                                    style: TextStyle(fontSize: 12));
+                              }
+                              final invoiceState = snapshot.data ?? 'Not Found';
+                              return Wrap(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 0),
+                                    decoration: BoxDecoration(
+                                      color: _getStatusColor(invoiceState),
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                    child: Text(
+                                      _mapInvoiceStatus(invoiceState),
+                                      style: const TextStyle(
+                                          color: Colors.white, fontSize: 12),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          ),
+                        ]),
                     ],
                   ),
                   const Divider(height: 16, thickness: 1),
@@ -1101,12 +1069,6 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                   const Icon(Icons.add_box, color: Colors.blue),
                               onPressed: _showAddProductDialog,
                               tooltip: 'Add Product',
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.note_add,
-                                  color: Colors.amber),
-                              onPressed: _addLineNote,
-                              tooltip: 'Add Note Line',
                             ),
                             IconButton(
                               icon: const Icon(Icons.save, color: Colors.green),
@@ -1134,14 +1096,15 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                         ),
                     ],
                   ),
-                  Expanded(
+                  SizedBox(
+                    height: MediaQuery.of(context).size.height * 0.4,
                     child: isEditLineMode
                         ? ListView.builder(
                             itemCount: tempOrderLines.length,
                             itemBuilder: (context, index) {
                               if (index >= _priceControllers.length ||
                                   index >= tempOrderLines.length) {
-                                return SizedBox();
+                                return const SizedBox();
                               }
                               final line = tempOrderLines[index];
                               final name = line['name'] ?? 'No Description';
@@ -1194,31 +1157,29 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                       const EdgeInsets.symmetric(vertical: 8.0),
                                   child: Padding(
                                     padding: const EdgeInsets.all(8.0),
-                                    child: Row(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
-                                        Expanded(
-                                          flex: 1,
-                                          child: Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              Text(
-                                                name,
-                                                style: const TextStyle(
-                                                    fontWeight: FontWeight.bold,
-                                                    fontSize: 12),
-                                              ),
-                                              TextField(
+                                        Text(
+                                          name,
+                                          style: const TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 12),
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              flex: 1,
+                                              child: TextField(
                                                 controller:
                                                     _priceControllers[index],
                                                 keyboardType:
                                                     TextInputType.number,
                                                 decoration:
                                                     const InputDecoration(
-                                                  labelText: 'Price',
-                                                  // border: OutlineInputBorder(),
-                                                  // isDense: true,
-                                                ),
+                                                        labelText: 'Price'),
                                                 style: const TextStyle(
                                                     fontSize: 12),
                                                 onChanged: (value) {
@@ -1233,73 +1194,81 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                                   });
                                                 },
                                               ),
-                                            ],
-                                          ),
+                                            ),
+                                            const SizedBox(width: 10),
+                                            Expanded(
+                                              flex: 1,
+                                              child: Row(
+                                                children: [
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.remove_circle,
+                                                        color: Colors.red),
+                                                    onPressed: () =>
+                                                        _updateQuantity(
+                                                            index, -1),
+                                                  ),
+                                                  Expanded(
+                                                    child: TextField(
+                                                      controller:
+                                                          _quantityControllers[
+                                                              index],
+                                                      keyboardType:
+                                                          TextInputType.number,
+                                                      inputFormatters: [
+                                                        FilteringTextInputFormatter
+                                                            .digitsOnly
+                                                      ],
+                                                      textAlign:
+                                                          TextAlign.center,
+                                                      style: const TextStyle(
+                                                          fontSize: 12),
+                                                      onChanged: (value) {
+                                                        if (value.isNotEmpty) {
+                                                          final parsedQty =
+                                                              int.parse(value);
+                                                          setState(() {
+                                                            tempOrderLines[
+                                                                        index][
+                                                                    'product_uom_qty'] =
+                                                                parsedQty;
+                                                          });
+                                                        }
+                                                      },
+                                                    ),
+                                                  ),
+                                                  IconButton(
+                                                    icon: const Icon(
+                                                        Icons.add_circle,
+                                                        color: Colors.green),
+                                                    onPressed: () =>
+                                                        _updateQuantity(
+                                                            index, 1),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            IconButton(
+                                              icon: const Icon(Icons.delete,
+                                                  color: Colors.red),
+                                              onPressed: () =>
+                                                  _removeLine(index),
+                                            ),
+                                          ],
                                         ),
-                                        Expanded(
-                                          flex: 1,
-                                          child: Row(
-                                            children: [
-                                              IconButton(
-                                                icon: const Icon(
-                                                    Icons.remove_circle,
-                                                    color: Colors.red),
-                                                onPressed: () =>
-                                                    _updateQuantity(index, -1),
-                                              ),
-                                              Expanded(
-                                                child: TextField(
-                                                  controller:
-                                                      _quantityControllers[
-                                                          index],
-                                                  keyboardType:
-                                                      TextInputType.number,
-                                                  textAlign: TextAlign.center,
-                                                  style: const TextStyle(
-                                                      fontSize: 12),
-                                                  // decoration:
-                                                  //     const InputDecoration(
-                                                  //   border: OutlineInputBorder(),
-                                                  //   isDense: true,
-                                                  // ),
-                                                  onChanged: (value) {
-                                                    final parsedQty = int
-                                                            .tryParse(value) ??
-                                                        tempOrderLines[index]
-                                                            ['product_uom_qty'];
-                                                    setState(() {
-                                                      tempOrderLines[index][
-                                                              'product_uom_qty'] =
-                                                          parsedQty;
-                                                    });
-                                                  },
-                                                ),
-                                              ),
-                                              IconButton(
-                                                icon: const Icon(
-                                                    Icons.add_circle,
-                                                    color: Colors.green),
-                                                onPressed: () =>
-                                                    _updateQuantity(index, 1),
-                                              ),
-                                            ],
+                                        const SizedBox(height: 8),
+                                        TextField(
+                                          controller: _noteControllers[index],
+                                          decoration: const InputDecoration(
+                                            labelText: 'Notes',
+                                            border: OutlineInputBorder(),
                                           ),
-                                        ),
-                                        IconButton(
-                                          icon: const Icon(Icons.delete,
-                                              color: Colors.red),
-                                          onPressed: () {
+                                          style: const TextStyle(fontSize: 12),
+                                          maxLines: 2,
+                                          onChanged: (value) {
                                             setState(() {
-                                              if (tempOrderLines[index]['id'] !=
-                                                  null) {
-                                                deletedOrderLines.add(
-                                                    tempOrderLines[index]
-                                                        ['id']);
-                                              }
-                                              tempOrderLines.removeAt(index);
-                                              _quantityControllers
-                                                  .removeAt(index);
-                                              _priceControllers.removeAt(index);
+                                              tempOrderLines[index]['notes'] =
+                                                  value;
                                             });
                                           },
                                         ),
@@ -1328,167 +1297,151 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                                 return const Center(
                                     child: Text('No order lines.'));
                               }
-
                               final lines = lineSnapshot.data!;
                               return ListView.builder(
-                                  itemCount: lines.length,
-                                  itemBuilder: (context, index) {
-                                    final line = lines[index];
-                                    final isNoteLine =
-                                        line['display_type'] == 'line_note';
-
-                                    if (isNoteLine) {
-                                      // Custom card for note lines
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
-                                            vertical: 8.0),
-                                        color: Colors.amber[
-                                            50], // Light amber color for notes
-                                        child: Padding(
-                                          padding: const EdgeInsets.all(12.0),
-                                          child: Text(
-                                            line['name'] ?? 'No Note',
-                                            style:
-                                                const TextStyle(fontSize: 12),
-                                          ),
+                                itemCount: lines.length,
+                                itemBuilder: (context, index) {
+                                  final line = lines[index];
+                                  final isNoteLine =
+                                      line['display_type'] == 'line_note';
+                                  if (isNoteLine) {
+                                    return Card(
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 8.0),
+                                      color: Colors.amber[50],
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(12.0),
+                                        child: Text(
+                                          line['name'] ?? 'No Note',
+                                          style: const TextStyle(fontSize: 12),
                                         ),
-                                      );
-                                    } else {
-                                      // Original product line card
-                                      final qty = line['product_uom_qty'] ?? 0;
-                                      final taxName =
-                                          line['tax_name'] ?? 'No Tax';
-                                      final price = line['price_unit'] ?? 0.0;
-                                      final subtotal =
-                                          line['price_total'] ?? 0.0;
-                                      final productImageBase64 = line[
-                                          'image_1920']; // Product image in base64
-
-                                      return Card(
-                                        margin: const EdgeInsets.symmetric(
-                                            vertical: 8.0),
-                                        child: ListTile(
-                                          leading: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(8),
-                                            child: productImageBase64 != null &&
-                                                    productImageBase64 is String
-                                                ? Image.memory(
-                                                    base64Decode(
-                                                        productImageBase64),
-                                                    width: 50,
-                                                    height: 50,
-                                                    fit: BoxFit.cover,
-                                                    errorBuilder: (context,
-                                                        error, stackTrace) {
-                                                      return const Icon(
-                                                          Icons.broken_image,
-                                                          size: 50);
-                                                    },
-                                                  )
-                                                : const Icon(
-                                                    Icons.image_not_supported,
-                                                    size: 50),
-                                          ),
-                                          title: Text(
+                                      ),
+                                    );
+                                  } else {
+                                    final qty = line['product_uom_qty'] ?? 0;
+                                    final taxName =
+                                        line['tax_name'] ?? 'No Tax';
+                                    final price = line['price_unit'] ?? 0.0;
+                                    final subtotal = line['price_total'] ?? 0.0;
+                                    final productImageBase64 =
+                                        line['image_1920'];
+                                    return Card(
+                                      margin: const EdgeInsets.symmetric(
+                                          vertical: 8.0),
+                                      child: ListTile(
+                                        leading: ClipRRect(
+                                          borderRadius:
+                                              BorderRadius.circular(8),
+                                          child: productImageBase64 != null &&
+                                                  productImageBase64 is String
+                                              ? Image.memory(
+                                                  base64Decode(
+                                                      productImageBase64),
+                                                  width: 50,
+                                                  height: 50,
+                                                  fit: BoxFit.cover,
+                                                  errorBuilder: (context, error,
+                                                      stackTrace) {
+                                                    return const Icon(
+                                                        Icons.broken_image,
+                                                        size: 50);
+                                                  },
+                                                )
+                                              : const Icon(
+                                                  Icons.image_not_supported,
+                                                  size: 50),
+                                        ),
+                                        title: Text(
                                             line['name'] ?? 'No Description',
                                             style:
-                                                const TextStyle(fontSize: 12),
-                                          ),
-                                          subtitle: Padding(
-                                            padding:
-                                                const EdgeInsets.only(top: 1),
-                                            child: Table(
-                                              columnWidths: const {
-                                                0: IntrinsicColumnWidth(),
-                                                1: FixedColumnWidth(12),
-                                              },
-                                              children: [
-                                                TableRow(
-                                                  children: [
-                                                    const Text(
-                                                      'Qty',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    const Text(
-                                                      ' : ',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    Text(
-                                                      qty.toString(),
-                                                      style: const TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                  ],
+                                                const TextStyle(fontSize: 12)),
+                                        subtitle: Padding(
+                                          padding:
+                                              const EdgeInsets.only(top: 1),
+                                          child: Table(
+                                            columnWidths: const {
+                                              0: IntrinsicColumnWidth(),
+                                              1: FixedColumnWidth(12),
+                                            },
+                                            children: [
+                                              TableRow(children: [
+                                                const Text('Qty',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                const Text(' : ',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                Text(
+                                                  qty is double
+                                                      ? qty.toInt().toString()
+                                                      : qty.toString(),
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
                                                 ),
-                                                TableRow(
-                                                  children: [
-                                                    const Text(
-                                                      'Price',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    const Text(
-                                                      ' : ',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    Text(
-                                                      currencyFormatter
-                                                          .format(price),
-                                                      style: const TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                  ],
+                                              ]),
+                                              TableRow(children: [
+                                                const Text('Price',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                const Text(' : ',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                Text(
+                                                    currencyFormatter
+                                                        .format(price),
+                                                    style: const TextStyle(
+                                                        fontSize: 12)),
+                                              ]),
+                                              TableRow(children: [
+                                                const Text('Taxes',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                const Text(' : ',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                Text(taxName.toString(),
+                                                    style: const TextStyle(
+                                                        fontSize: 12)),
+                                              ]),
+                                              TableRow(children: [
+                                                const Text('Notes',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                const Text(' : ',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                Text(
+                                                  (line['notes'] is String &&
+                                                          line['notes'] !=
+                                                              false &&
+                                                          line['notes'] != true)
+                                                      ? line['notes']
+                                                      : '',
+                                                  style: const TextStyle(
+                                                      fontSize: 12),
                                                 ),
-                                                TableRow(
-                                                  children: [
-                                                    const Text(
-                                                      'Taxes',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    const Text(
-                                                      ' : ',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    Text(
-                                                      taxName.toString(),
-                                                      style: const TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                  ],
-                                                ),
-                                                TableRow(
-                                                  children: [
-                                                    const Text(
-                                                      'Subtotal',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    const Text(
-                                                      ' : ',
-                                                      style: TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                    Text(
-                                                      currencyFormatter
-                                                          .format(subtotal),
-                                                      style: const TextStyle(
-                                                          fontSize: 12),
-                                                    ),
-                                                  ],
-                                                ),
-                                              ],
-                                            ),
+                                              ]),
+                                              TableRow(children: [
+                                                const Text('Subtotal',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                const Text(' : ',
+                                                    style: TextStyle(
+                                                        fontSize: 12)),
+                                                Text(
+                                                    currencyFormatter
+                                                        .format(subtotal),
+                                                    style: const TextStyle(
+                                                        fontSize: 12)),
+                                              ]),
+                                            ],
                                           ),
                                         ),
-                                      );
-                                    }
-                                  });
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
                             },
                           ),
                   ),
@@ -1497,7 +1450,6 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        // Existing fields...
                         const Divider(height: 16, thickness: 1),
                         Column(
                           children: [

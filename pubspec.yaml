@@ -1,5 +1,5 @@
-name: flutter_app
-description: "A new Flutter project."
+name: bpa_sales_app
+description: "BPA Sales App"
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -44,6 +44,7 @@ dependencies:
   intl: ^0.18.0
   shimmer: ^3.0.0
   flutter_masked_text2: ^0.9.1
+  shared_preferences: ^2.5.3
 
 dev_dependencies:
   flutter_test:

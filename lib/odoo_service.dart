@@ -5,6 +5,7 @@ import 'package:odoo_rpc/odoo_rpc.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/io_client.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class OdooService {
   final OdooClient _client;
@@ -44,10 +45,23 @@ class OdooService {
       final sessionData =
           await const FlutterSecureStorage().read(key: _sessionKey);
       if (sessionData == null) return null;
+
       final session = OdooSession.fromJson(jsonDecode(sessionData));
-      final client = OdooClient('https://bpa.alphasoft.co.id/', session);
+      final client = OdooClient('https://bpa.alphasoft.co.id/ ', session);
+
       try {
         await client.checkSession();
+
+        // Baca username dari SharedPreferences
+        final prefs = await SharedPreferences.getInstance();
+        final username = prefs.getString('current_username');
+
+        // Jika username tersedia, simpan ke currentUsername atau gunakan langsung
+        if (username != null) {
+          // Contoh: simpan ke variabel global atau kelas
+          // currentUsername = username;
+        }
+
         return session;
       } on OdooSessionExpiredException {
         print('Session expired');
@@ -61,9 +75,13 @@ class OdooService {
 
   Future<void> login(String database, String username, String password) async {
     try {
-      await _configureHttpClient(); // Konfigurasi HTTP client dengan sertifikat
+      await _configureHttpClient();
       await _client.authenticate(database, username, password);
-      currentUsername = username; // Simpan username untuk keperluan lainnya
+      currentUsername = username;
+
+      // Simpan username ke SharedPreferences
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('current_username', username);
     } on OdooException catch (e) {
       throw Exception('Login failed: $e');
     }
@@ -81,9 +99,13 @@ class OdooService {
 
   Future<void> checkSession() async {
     try {
-      await _client.checkSession(); // Periksa apakah sesi masih valid
-    } on OdooSessionExpiredException {
+      await _client.checkSession(); // Periksa apakah sesi masih aktif
+    } on OdooSessionExpiredException catch (_) {
+      await _storage.delete(key: _sessionKey);
+      currentUsername = null;
       throw Exception('Session expired. Please log in again.');
+    } catch (e) {
+      throw Exception('Session check failed: $e');
     }
   }
 
@@ -182,30 +204,32 @@ class OdooService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchProductsTemplate() async {
-    await checkSession(); // Pastikan sesi valid sebelum fetch
-    try {
-      final response = await _client.callKw({
-        'model': 'product.template',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'fields': [
-            'id',
-            'name',
-            'list_price',
-            'image_1920',
-            'qty_available',
-            'default_code',
-            'categ_id', // Ambil category_id dari product.template
-          ],
-        },
-      });
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      throw Exception('Failed to fetch products template: $e');
-    }
+  Future<List<Map<String, dynamic>>> fetchProductsTemplate({
+  int limit = 25,
+  int offset = 0,
+  List<List<dynamic>> domain = const [],
+}) async {
+  await checkSession();
+  try {
+    final response = await _client.callKw({
+      'model': 'product.template',
+      'method': 'search_read',
+      'args': [domain], // Gunakan domain dinamis
+      'kwargs': {
+        'fields': [
+          'id', 'name', 'list_price', 'image_1920', 
+          'qty_available', 'default_code', 'categ_id'
+        ],
+        'limit': limit,
+        'offset': offset,
+      },
+    });
+    return List<Map<String, dynamic>>.from(response);
+  } catch (e) {
+    print('Error fetching products: $e');
+    throw Exception('Failed to fetch products template: $e');
   }
+}
 
   Future<Map<String, dynamic>> fetchUser([String? username]) async {
     await checkSession(); // Pastikan session valid sebelum fetch
@@ -336,6 +360,9 @@ class OdooService {
         'method': 'search_read',
         'args': [],
         'kwargs': {
+          'domain': [
+            ['parent_id', '=', false]
+          ],
           'fields': [
             'id',
             'name',
@@ -346,8 +373,16 @@ class OdooService {
           ],
         },
       });
-      return List<Map<String, dynamic>>.from(response);
+      if (response is List && response.isNotEmpty && response[0] is Map) {
+        return List<Map<String, dynamic>>.from(response);
+      } else {
+        throw Exception('Invalid data format received from server');
+      }
     } catch (e) {
+      // Jika error karena sesi kadaluarsa, minta login ulang
+      if (e.toString().contains('Session expired')) {
+        // Redirect ke halaman login atau trigger logout
+      }
       throw Exception('Failed to fetch customers: $e');
     }
   }
@@ -411,6 +446,7 @@ class OdooService {
           'product_uom_qty': lineData['product_uom_qty'],
           'product_uom': lineData['product_uom'],
           'price_unit': lineData['price_unit'],
+          'notes': lineData['notes'],
         };
 
         // Add product_template_id if it exists in the lineData
@@ -439,6 +475,8 @@ class OdooService {
     required int limit,
     required int offset,
     String searchQuery = '',
+    int? month,
+    int? year,
   }) async {
     if (currentUsername == null) {
       throw Exception('User is not logged in.');
@@ -469,6 +507,38 @@ class OdooService {
       List<dynamic> domain = [
         ['user_member_id', '=', userId] // Filter berdasarkan user_id
       ];
+
+      // Tambahkan filter bulan dan tahun jika ada
+      if (month != null && month != 0) {
+        final String monthStr = month.toString().padLeft(2, '0');
+
+        if (year != null) {
+          // Format filter untuk bulan dan tahun tertentu
+          String startDate = "$year-$monthStr-01";
+
+          // Hitung tanggal akhir bulan
+          DateTime lastDay;
+          if (month == 12) {
+            lastDay = DateTime(year + 1, 1, 0);
+          } else {
+            lastDay = DateTime(year, month + 1, 0);
+          }
+
+          String endDate =
+              "${lastDay.year}-${lastDay.month.toString().padLeft(2, '0')}-${lastDay.day.toString().padLeft(2, '0')}";
+
+          // Filter rentang tanggal
+          domain.add(['date_order', '>=', startDate]);
+          domain.add(['date_order', '<=', endDate + " 23:59:59"]);
+        }
+      } else if (year != null) {
+        // Filter hanya berdasarkan tahun
+        String startDate = "$year-01-01";
+        String endDate = "$year-12-31";
+
+        domain.add(['date_order', '>=', startDate]);
+        domain.add(['date_order', '<=', endDate + " 23:59:59"]);
+      }
 
       if (searchQuery.isNotEmpty) {
         domain = [
@@ -538,7 +608,7 @@ class OdooService {
             'tax_totals',
             'state',
             'user_member_id',
-            'notes', // Explicitly include the notes field
+            'notes',
           ],
           'limit': 1, // Fetch only one record
         },
@@ -578,6 +648,7 @@ class OdooService {
             'tax_id', // Taxes
             'product_uom', // UoM
             'display_type', // Display Type (for line_note)
+            'notes',
           ],
         },
       });
@@ -1524,8 +1595,9 @@ class OdooService {
     }
   }
 
-  Future<void> createProductLine(int quotationId, int productId, String name,
-      int quantity, double price) async {
+  Future<void> createProductLine(
+      int quotationId, int productId, String name, int quantity, double price,
+      [String notes = '']) async {
     await checkSession();
     try {
       await _client.callKw({
@@ -1538,6 +1610,7 @@ class OdooService {
             'name': name,
             'product_uom_qty': quantity,
             'price_unit': price,
+            'notes': notes,
           },
         ],
         'kwargs': {},
@@ -1547,7 +1620,8 @@ class OdooService {
     }
   }
 
-  Future<void> updateProductLine(int lineId, int quantity, double price) async {
+  Future<void> updateProductLine(
+      int lineId, int quantity, double price, String notes) async {
     await checkSession();
     try {
       await _client.callKw({
@@ -1555,10 +1629,7 @@ class OdooService {
         'method': 'write',
         'args': [
           [lineId],
-          {
-            'product_uom_qty': quantity,
-            'price_unit': price,
-          },
+          {'product_uom_qty': quantity, 'price_unit': price, 'notes': notes},
         ],
         'kwargs': {},
       });
@@ -1607,11 +1678,9 @@ class OdooService {
         } catch (e) {
           throw Exception('Failed to extract ID from response: $response');
         }
-      }
-      else if (response is int) {
+      } else if (response is int) {
         return response;
-      }
-      else if (response is String) {
+      } else if (response is String) {
         try {
           return int.parse(response);
         } catch (e) {
@@ -1758,6 +1827,83 @@ class OdooService {
       });
     } catch (e) {
       throw Exception('Failed to confirm giro book: $e');
+    }
+  }
+
+  Future<Map<String, String>> fetchInvoiceStatusBatch(
+      List<String> orderNames) async {
+    if (orderNames.isEmpty) {
+      return {};
+    }
+
+    try {
+      final response = await _client.callKw({
+        'model': 'account.move',
+        'method': 'search_read',
+        'args': [
+          [
+            ['invoice_origin', 'in', orderNames],
+            [
+              'move_type',
+              'in',
+              ['out_invoice', 'out_refund']
+            ], // Only get customer invoices
+            ['state', '!=', 'cancel'], // Exclude cancelled invoices
+          ]
+        ],
+        'kwargs': {
+          'fields': ['invoice_origin', 'payment_state', 'state'],
+        },
+      });
+
+      // Create a map to store the best payment state for each order
+      Map<String, String> result = {};
+
+      // Process each invoice from the response
+      for (var invoice in response) {
+        if (invoice['invoice_origin'] != null) {
+          String orderName = invoice['invoice_origin'];
+          String paymentState = invoice['payment_state'] ?? 'not_found';
+
+          // If we already have a state for this order, only update if the new state is "better"
+          if (!result.containsKey(orderName) ||
+              _getPaymentStatePriority(paymentState) >
+                  _getPaymentStatePriority(result[orderName]!)) {
+            result[orderName] = paymentState;
+          }
+        }
+      }
+
+      // For any orderNames that didn't match, set them to 'not_found'
+      for (String orderName in orderNames) {
+        if (!result.containsKey(orderName)) {
+          result[orderName] = 'not_found';
+        }
+      }
+
+      return result;
+    } catch (e) {
+      print('Error fetching invoice statuses: $e');
+      return {};
+    }
+  }
+
+  int _getPaymentStatePriority(String state) {
+    switch (state) {
+      case 'paid':
+        return 5;
+      case 'in_payment':
+        return 4;
+      case 'partial':
+        return 3;
+      case 'not_paid':
+        return 2;
+      case 'reversed':
+        return 1;
+      case 'not_found':
+        return 0;
+      default:
+        return 0;
     }
   }
 }

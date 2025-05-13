@@ -47,7 +47,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
           odooService: widget.odooService,
           invoiceId: invoice['id'],
           invoiceName: invoice['name'],
-          initialAmount: 0,
+          initialAmount: invoice['amount_total'],
           partnerId: invoice['partner_id']?[0]?.toString() ?? '',
         );
       },

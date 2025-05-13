@@ -1,9 +1,13 @@
+// ignore_for_file: unused_field
+
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_animate/flutter_animate.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/intl.dart';
 import 'odoo_service.dart';
 import 'product_detail_screen.dart';
+import 'dart:async';
 
 class HomeScreen extends StatefulWidget {
   final OdooService odooService;
@@ -15,6 +19,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _productLimit = 25; // Jumlah produk per halaman
+  int _productOffset = 0;
+  bool _hasMoreProducts = true;
+  bool _isLoadingMore = false;
   List<Map<String, dynamic>> _products = [];
   List<Map<String, dynamic>> _filteredProducts = [];
   List<Map<String, dynamic>> _categories = [];
@@ -22,6 +30,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _isGridView = true;
   bool _isCategoryLoading = false; // Status loading kategori
   final TextEditingController _searchController = TextEditingController();
+  late ScrollController _scrollController;
+  Timer? _searchDebounce; // Tambahkan deklarasi
+  bool _isFirstLoad = false; // Tambahkan variabel ini
 
   final currencyFormatter = NumberFormat.currency(
     locale: 'id_ID',
@@ -32,13 +43,68 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _initializeProducts();
-    _initializeCategories();
-
-    // Listener untuk search bar
-    _searchController.addListener(() {
-      _filterProducts(_searchController.text);
+    _scrollController = ScrollController();
+    _scrollController.addListener(_onProductScroll);
+    _loadFromCache().then((_) {
+      if (_products.isEmpty) {
+        _initializeProducts();
+      }
     });
+    _initializeCategories();
+    _searchController.addListener(() {
+      _searchDebounce?.cancel();
+      _searchDebounce = Timer(const Duration(milliseconds: 300), () {
+        _filterProducts(_searchController.text);
+      });
+    });
+  }
+
+  Future<void> _saveProductsToCache(List<Map<String, dynamic>> products) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = jsonEncode(products.map((p) => p).toList());
+      await prefs.setString('cached_products', encoded);
+      await prefs.setInt(
+          'cache_timestamp', DateTime.now().millisecondsSinceEpoch);
+    } catch (e) {
+      print('Error saving cache: $e');
+    }
+  }
+
+  Future<void> _loadFromCache() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final encoded = prefs.getString('cached_products');
+      final timestamp = prefs.getInt('cache_timestamp');
+
+      if (encoded != null && timestamp != null) {
+        final now = DateTime.now().millisecondsSinceEpoch;
+        final cacheDuration = 30 * 60 * 1000; // 30 menit
+        if (now - timestamp < cacheDuration) {
+          final products = jsonDecode(encoded).cast<Map<String, dynamic>>();
+          setState(() {
+            _products = products;
+            _filteredProducts = products;
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading cache: $e');
+      // Fallback ke fetch data dari server
+      _initializeProducts();
+    }
+  }
+
+  void _onProductScroll() {
+    if (_scrollController.position.pixels >=
+            _scrollController.position.maxScrollExtent * 0.9 &&
+        !_isLoadingMore &&
+        _hasMoreProducts) {
+      _initializeProducts(
+        categoryId: _selectedCategoryId,
+        searchQuery: _searchController.text,
+      );
+    }
   }
 
   @override
@@ -47,23 +113,136 @@ class _HomeScreenState extends State<HomeScreen> {
     super.dispose();
   }
 
-  Future<void> _initializeProducts() async {
-    try {
-      // Fetch products from product.template
-      final products = await widget.odooService.fetchProductsTemplate();
+  void _initializeProducts({String? categoryId, String? searchQuery}) async {
+  if (_isLoadingMore || !_hasMoreProducts) return;
+  
+  setState(() {
+    _isLoadingMore = true;
+    if (_products.isEmpty) _isFirstLoad = true;
+  });
+
+  try {
+    // Create base domain for filtering products
+    List<List<dynamic>> domain = [
+      ['detailed_type', '=', 'product']
+    ];
+
+    // Add category filter if selected
+    if (categoryId != null) {
+      domain.add(['categ_id', '=', int.parse(categoryId)]);
+    }
+
+    // Track product IDs to prevent duplicates
+    Set<int> productIds = _products.map((p) => p['id'] as int).toSet();
+
+    // Handle search query if provided
+    if (searchQuery?.isNotEmpty == true) {
+      // First search by name
+      List<List<dynamic>> nameDomain = List.from(domain);
+      nameDomain.add(['name', 'ilike', searchQuery]);
+
+      final nameProducts = await widget.odooService.fetchProductsTemplate(
+        limit: _productLimit,
+        offset: _productOffset,
+        domain: nameDomain,
+      );
+
+      // Add non-duplicate products from name search
+      List<Map<String, dynamic>> newProducts = [];
+      for (var product in nameProducts) {
+        int id = product['id'];
+        if (!productIds.contains(id)) {
+          productIds.add(id);
+          newProducts.add(product);
+        }
+      }
+
+      // If we need more products, search by default_code
+      if (newProducts.length < _productLimit) {
+        List<List<dynamic>> codeDomain = List.from(domain);
+        codeDomain.add(['default_code', 'ilike', searchQuery]);
+
+        final codeProducts = await widget.odooService.fetchProductsTemplate(
+          limit: _productLimit * 2, // Fetch more to account for potential duplicates
+          offset: _productOffset,
+          domain: codeDomain,
+        );
+
+        // Add non-duplicate products from code search
+        for (var product in codeProducts) {
+          int id = product['id'];
+          if (!productIds.contains(id)) {
+            productIds.add(id);
+            newProducts.add(product);
+            // Stop once we reach the limit
+            if (newProducts.length >= _productLimit) break;
+          }
+        }
+      }
+
       if (!mounted) return;
       setState(() {
-        _products = products; // Simpan produk dari product.template
-        _filteredProducts = products; // Inisialisasi filteredProducts
+        // For the first page, replace products; for subsequent pages, append
+        if (_productOffset == 0) {
+          _products = newProducts;
+          _filteredProducts = newProducts;
+        } else {
+          _products.addAll(newProducts);
+          _filteredProducts = List.from(_products); // Create a new list to prevent reference issues
+        }
+        _productOffset += newProducts.length;
+        _hasMoreProducts = newProducts.length == _productLimit;
+        _isFirstLoad = false;
       });
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error loading products: $e')),
-        );
+      return;
+    }
+
+    // Standard product fetch (when no search query)
+    final products = await widget.odooService.fetchProductsTemplate(
+      limit: _productLimit,
+      offset: _productOffset,
+      domain: domain,
+    );
+
+    // Remove duplicates
+    List<Map<String, dynamic>> newProducts = [];
+    for (var product in products) {
+      int id = product['id'];
+      if (!productIds.contains(id)) {
+        productIds.add(id);
+        newProducts.add(product);
       }
     }
+
+    if (!mounted) return;
+    setState(() {
+      if (_productOffset == 0) {
+        _products = newProducts;
+        _filteredProducts = newProducts;
+      } else {
+        _products.addAll(newProducts);
+        _filteredProducts = List.from(_products); // Create a new list to prevent reference issues
+      }
+      _productOffset += newProducts.length;
+      _hasMoreProducts = newProducts.length == _productLimit;
+      _isFirstLoad = false;
+    });
+
+    if (categoryId == null && searchQuery == null) {
+      await _saveProductsToCache(products);
+    }
+  } catch (e) {
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error: $e')),
+      );
+    }
+  } finally {
+    if (mounted) {
+      setState(() => _isLoadingMore = false);
+    }
   }
+}
 
   Future<void> _initializeCategories() async {
     setState(() {
@@ -88,54 +267,47 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _filterProducts(String query) {
+    if (query.isEmpty && _selectedCategoryId == null) {
+      setState(() {
+        _productOffset = 0;
+        _hasMoreProducts = true;
+        _products.clear();
+        _filteredProducts.clear();
+      });
+      _initializeProducts(); // Muat ulang semua produk
+      return;
+    }
+
     setState(() {
-      // Ambil produk berdasarkan kategori
-      List<Map<String, dynamic>> baseProducts = _selectedCategoryId == null
-          ? List.from(_products) // Semua produk
-          : _products.where((product) {
-              final category = product['categ_id'];
-              if (category is List && category.isNotEmpty) {
-                return category.first.toString() == _selectedCategoryId;
-              }
-              if (category is String || category is int) {
-                return category.toString() == _selectedCategoryId;
-              }
-              return false; // Produk tanpa kategori tidak termasuk
-            }).toList();
-
-      // Filter berdasarkan pencarian
-      if (query.isEmpty) {
-        _filteredProducts = baseProducts;
-      } else {
-        _filteredProducts = baseProducts.where((product) {
-          final name = product['name'];
-          final code = product['default_code'];
-          final nameStr = name is String ? name.toLowerCase() : '';
-          final codeStr = code is String ? code.toLowerCase() : '';
-          return nameStr.contains(query.toLowerCase()) ||
-              codeStr.contains(query.toLowerCase());
-        }).toList();
-      }
+      _productOffset = 0;
+      _hasMoreProducts = true;
+      _products.clear();
+      _filteredProducts.clear();
     });
-
-    // Debugging logs
-    debugPrint('Search query: $query');
-    debugPrint('Filtered products count: ${_filteredProducts.length}');
+    _initializeProducts(
+      categoryId: _selectedCategoryId,
+      searchQuery: query,
+    );
   }
 
   void _filterProductsByCategory(String? categoryId) {
-    setState(() {
-      // Jika kategori yang dipilih sama dengan yang aktif, batalkan pilihan
-      if (_selectedCategoryId == categoryId) {
-        _selectedCategoryId = null;
-      } else {
-        _selectedCategoryId = categoryId; // Set kategori yang dipilih
-      }
-
-      // Terapkan filter berdasarkan kategori dan pencarian
-      _filterProducts(_searchController.text);
-    });
-  }
+  setState(() {
+    // Toggle kategori: jika sama, unselect
+    _selectedCategoryId = (_selectedCategoryId == categoryId) ? null : categoryId;
+    _productOffset = 0;
+    _hasMoreProducts = true;
+    _products = []; // Using clear array syntax instead of .clear()
+    _filteredProducts = []; // Using clear array syntax instead of .clear()
+  });
+  
+  // Use a slight delay to ensure the state is updated before fetching
+  Timer(const Duration(milliseconds: 50), () {
+    _initializeProducts(
+      categoryId: _selectedCategoryId,
+      searchQuery: _searchController.text,
+    );
+  });
+}
 
   Widget _buildCategoryList() {
     if (_isCategoryLoading) {
@@ -149,8 +321,7 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: _categories.length,
         itemBuilder: (context, index) {
           final category = _categories[index];
-          final isSelected =
-              _selectedCategoryId == category['id'].toString(); // Status aktif
+          final isSelected = _selectedCategoryId == category['id'].toString();
 
           return GestureDetector(
             onTap: () {
@@ -262,7 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     // Ketersediaan
                     Text(
-                      'Available : ${product['qty_available'] ?? 0}',
+                      'Available : ${_formatQtyAvailable(product['qty_available'])}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.black54,
@@ -364,7 +535,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   // Ketersediaan Produk
                   Text(
-                    'Available : ${product['qty_available'] ?? 0}',
+                    'Available : ${_formatQtyAvailable(product['qty_available'])}',
                     style: const TextStyle(
                       color: Colors.black54,
                       fontSize: 13,
@@ -382,6 +553,29 @@ class _HomeScreenState extends State<HomeScreen> {
             duration: const Duration(milliseconds: 500),
           ),
     );
+  }
+
+  String _formatQtyAvailable(dynamic value) {
+    if (value == null) return '0';
+
+    if (value is int) {
+      return value.toString();
+    } else if (value is double) {
+      // Jika angka seperti 10.0, kembalikan sebagai integer
+      if (value == value.toInt()) {
+        return value.toInt().toString();
+      } else {
+        return value.toString();
+      }
+    } else if (value is String) {
+      // Jika ternyata nilainya string, coba parse ke number
+      final numVal = num.tryParse(value);
+      if (numVal != null) {
+        return numVal.toInt().toString();
+      }
+    }
+
+    return '0'; // Default jika tidak cocok semua
   }
 
   @override
@@ -428,42 +622,49 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           // Categories Horizontal List
           _buildCategoryList(),
-          Expanded(
-            child: _filteredProducts.isEmpty
-                ? const Center(
-                    child: Text(
-                      'No products found',
-                      style: TextStyle(fontSize: 16),
+          if (_isFirstLoad)
+            const LinearProgressIndicator()
+          else
+            Expanded(
+              child: _filteredProducts.isEmpty && !_isLoadingMore
+                  ? const Center(child: Text('No products found'))
+                  : NotificationListener<ScrollNotification>(
+                      onNotification: (scrollInfo) {
+                        if (scrollInfo.metrics.pixels ==
+                            scrollInfo.metrics.maxScrollExtent) {
+                          _initializeProducts();
+                        }
+                        return false;
+                      },
+                      child: _isGridView
+                          ? GridView.builder(
+                              padding: const EdgeInsets.all(10),
+                              gridDelegate:
+                                  const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent:
+                                    200, // Lebar maksimal setiap tile/card
+                                mainAxisSpacing: 10, // Jarak antar baris
+                                crossAxisSpacing: 10, // Jarak antar kolom
+                                childAspectRatio:
+                                    0.7, // Rasio aspek tile (lebar:tinggi)
+                              ),
+                              itemCount: _filteredProducts.length,
+                              itemBuilder: (context, index) {
+                                return _buildProductTile(
+                                    _filteredProducts[index], index);
+                              },
+                            )
+                          : ListView.builder(
+                              itemCount: _filteredProducts.length,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 10, vertical: 5),
+                              itemBuilder: (context, index) {
+                                return _buildProductListTile(
+                                    _filteredProducts[index], index);
+                              },
+                            ),
                     ),
-                  )
-                : _isGridView
-                    ? GridView.builder(
-                        padding: const EdgeInsets.all(10),
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                          maxCrossAxisExtent:
-                              200, // Lebar maksimal setiap tile/card
-                          mainAxisSpacing: 10, // Jarak antar baris
-                          crossAxisSpacing: 10, // Jarak antar kolom
-                          childAspectRatio:
-                              0.7, // Rasio aspek tile (lebar:tinggi)
-                        ),
-                        itemCount: _filteredProducts.length,
-                        itemBuilder: (context, index) {
-                          return _buildProductTile(
-                              _filteredProducts[index], index);
-                        },
-                      )
-                    : ListView.builder(
-                        itemCount: _filteredProducts.length,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 5),
-                        itemBuilder: (context, index) {
-                          return _buildProductListTile(
-                              _filteredProducts[index], index);
-                        },
-                      ),
-          ),
+            ),
         ],
       ),
     );

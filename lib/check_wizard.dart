@@ -88,6 +88,24 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
     }
   }
 
+  void _showAmountExceededDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Warning'),
+          content: Text('Amount cannot exceed ${widget.initialAmount}'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
@@ -108,7 +126,7 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
                 },
               ),
               TextFormField(
-                initialValue: amountTotal.toString(),
+                initialValue: '0.0',
                 decoration: const InputDecoration(labelText: 'Amount'),
                 keyboardType: TextInputType.number,
                 validator: (value) {
@@ -118,6 +136,12 @@ class _CheckWizardDialogState extends State<CheckWizardDialog> {
                   final double? parsed = double.tryParse(value);
                   if (parsed == null || parsed < 0) {
                     return 'Enter a valid amount';
+                  }
+                  // Add validation for maximum amount
+                  if (parsed > widget.initialAmount) {
+                    // Schedule the dialog to show after the current build cycle
+                    Future.microtask(() => _showAmountExceededDialog());
+                    return 'Amount cannot exceed ${widget.initialAmount}';
                   }
                   return null;
                 },
