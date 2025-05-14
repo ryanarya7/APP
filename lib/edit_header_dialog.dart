@@ -41,7 +41,7 @@ class _EditHeaderDialogState extends State<EditHeaderDialog> {
 
   Future<void> _loadData() async {
     try {
-      final fetchedCustomers = await widget.odooService.fetchCustomers();
+      final fetchedCustomers = await widget.odooService.fetchCustomerz();
       final fetchedSalespersons = await widget.odooService.fetchSalespersons();
       final fetchedPaymentTerms = await widget.odooService.fetchPaymentTerms();
       final fetchedWarehouses = await widget.odooService.fetchWarehouses();

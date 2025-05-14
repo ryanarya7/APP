@@ -205,31 +205,36 @@ class OdooService {
   }
 
   Future<List<Map<String, dynamic>>> fetchProductsTemplate({
-  int limit = 25,
-  int offset = 0,
-  List<List<dynamic>> domain = const [],
-}) async {
-  await checkSession();
-  try {
-    final response = await _client.callKw({
-      'model': 'product.template',
-      'method': 'search_read',
-      'args': [domain], // Gunakan domain dinamis
-      'kwargs': {
-        'fields': [
-          'id', 'name', 'list_price', 'image_1920', 
-          'qty_available', 'default_code', 'categ_id'
-        ],
-        'limit': limit,
-        'offset': offset,
-      },
-    });
-    return List<Map<String, dynamic>>.from(response);
-  } catch (e) {
-    print('Error fetching products: $e');
-    throw Exception('Failed to fetch products template: $e');
+    int limit = 25,
+    int offset = 0,
+    List<List<dynamic>> domain = const [],
+  }) async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'product.template',
+        'method': 'search_read',
+        'args': [domain], // Gunakan domain dinamis
+        'kwargs': {
+          'fields': [
+            'id',
+            'name',
+            'list_price',
+            'image_1920',
+            'qty_available',
+            'default_code',
+            'categ_id'
+          ],
+          'limit': limit,
+          'offset': offset,
+        },
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Error fetching products: $e');
+      throw Exception('Failed to fetch products template: $e');
+    }
   }
-}
 
   Future<Map<String, dynamic>> fetchUser([String? username]) async {
     await checkSession(); // Pastikan session valid sebelum fetch
@@ -353,6 +358,40 @@ class OdooService {
   }
 
   Future<List<Map<String, dynamic>>> fetchCustomers() async {
+    await checkSession();
+    try {
+      final response = await _client.callKw({
+        'model': 'res.partner',
+        'method': 'search_read',
+        'args': [],
+        'kwargs': {
+          'domain': [], // Ambil semua partner
+          'fields': [
+            'id',
+            'name',
+            'parent_id', // Wajib ada untuk identifikasi hierarki
+            'street',
+            'phone',
+            'vat',
+            'property_payment_term_id'
+          ],
+        },
+      });
+      if (response is List && response.isNotEmpty && response[0] is Map) {
+        return List<Map<String, dynamic>>.from(response);
+      } else {
+        throw Exception('Invalid data format received from server');
+      }
+    } catch (e) {
+      // Jika error karena sesi kadaluarsa, minta login ulang
+      if (e.toString().contains('Session expired')) {
+        // Redirect ke halaman login atau trigger logout
+      }
+      throw Exception('Failed to fetch customers: $e');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchCustomerz() async {
     await checkSession();
     try {
       final response = await _client.callKw({

@@ -127,7 +127,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Bank Selection - Optional
+                  // Bank Selection - Now Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -151,7 +151,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                         final bankList = snapshot.data ?? [];
                         return ListTile(
                           title: const Text(
-                            "Bank Penerbit",
+                            "Bank Penerbit *",
                             style: TextStyle(fontSize: 14),
                           ),
                           subtitle: DropdownButton<int>(
@@ -202,9 +202,11 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
+                        // Memastikan initialDate tidak sebelum firstDate
+                        final now = DateTime.now();
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: DateTime.now(),
+                          initialDate: now,
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
@@ -218,7 +220,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Giro Date - Optional
+                  // Tanggal Giro Cair - Now Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -227,7 +229,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Giro Date",
+                        "Tanggal Giro Cair *",
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: Text(
@@ -242,9 +244,11 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
+                        // Memastikan initialDate tidak sebelum firstDate
+                        final now = DateTime.now();
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: DateTime.now(),
+                          initialDate: now,
                           firstDate: DateTime(2000),
                           lastDate: DateTime(2100),
                         );
@@ -290,21 +294,28 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       ),
                       trailing: const Icon(Icons.calendar_today),
                       onTap: () async {
+                        // Memastikan initialDate tidak sebelum firstDate
+                        final now = DateTime.now();
+                        // Buat firstDate berdasarkan tanggal giro jika ada
+                        final firstDate = giroDate ?? DateTime(2000);
+
+                        // Pastikan initialDate tidak sebelum firstDate
+                        final initialDate =
+                            now.isAfter(firstDate) ? now : firstDate;
+
                         final DateTime? picked = await showDatePicker(
                           context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: giroDate ??
-                              DateTime(
-                                  2000), // If giroDate is set, can't be earlier
+                          initialDate: initialDate,
+                          firstDate: firstDate,
                           lastDate: DateTime(2100),
                         );
                         if (picked != null) {
-                          // Logic check: Ensure expiry date isn't before giro date
+                          // Logic check: Ensure expiry date isn't before Tanggal Giro Cair
                           if (giroDate != null && picked.isBefore(giroDate!)) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text(
-                                    'Expired date cannot be before giro date'),
+                                    'Expired date cannot be before tanggal giro cair'),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -319,7 +330,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
 
                   const SizedBox(height: 16),
 
-                  // Amount - Optional but with default
+                  // Amount - Now Mandatory
                   Container(
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     decoration: BoxDecoration(
@@ -328,7 +339,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                     ),
                     child: ListTile(
                       title: const Text(
-                        "Amount",
+                        "Amount *",
                         style: TextStyle(fontSize: 14),
                       ),
                       subtitle: TextFormField(
@@ -362,11 +373,21 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       const SizedBox(width: 16),
                       ElevatedButton(
                         onPressed: () {
-                          // Validate only mandatory inputs
+                          // Validate all fields as they are now mandatory
                           if (giroNumberController.text.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
                                 content: Text('Please enter a giro number'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (selectedBankId == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please select a bank'),
                                 backgroundColor: Colors.red,
                               ),
                             );
@@ -383,6 +404,16 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                             return;
                           }
 
+                          if (giroDate == null) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please select a Tanggal Giro Cair'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
                           if (giroExpiredDate == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -393,17 +424,26 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                             return;
                           }
 
+                          if (amountController.text.isEmpty ||
+                              (double.tryParse(amountController.text) ?? 0.0) <=
+                                  0) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter a valid amount'),
+                                backgroundColor: Colors.red,
+                              ),
+                            );
+                            return;
+                          }
+
                           // Create the line
                           _createLine(
                             giroNumberController.text,
-                            selectedBankId, // Can be null
+                            selectedBankId!, // Now must have value
                             receiveDate!,
-                            giroDate, // Can be null
+                            giroDate!, // Now must have value
                             giroExpiredDate!,
-                            amountController.text.isEmpty
-                                ? 0.0
-                                : (double.tryParse(amountController.text) ??
-                                    0.0),
+                            double.parse(amountController.text),
                           );
 
                           Navigator.of(context).pop();
@@ -476,447 +516,447 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
     });
   }
 
-  void _showEditLineDialog(Map<String, dynamic> line) {
-    // Controllers for form fields
-    final TextEditingController giroNumberController =
-        TextEditingController(text: line['name'] ?? '');
-    int? selectedBankId;
-    DateTime? receiveDate;
-    DateTime? giroDate;
-    DateTime? giroExpiredDate;
-    final TextEditingController amountController =
-        TextEditingController(text: (line['check_amount'] ?? 0.0).toString());
+  // void _showEditLineDialog(Map<String, dynamic> line) {
+  //   // Controllers for form fields
+  //   final TextEditingController giroNumberController =
+  //       TextEditingController(text: line['name'] ?? '');
+  //   int? selectedBankId;
+  //   DateTime? receiveDate;
+  //   DateTime? giroDate;
+  //   DateTime? giroExpiredDate;
+  //   final TextEditingController amountController =
+  //       TextEditingController(text: (line['check_amount'] ?? 0.0).toString());
 
-    // Initialize values from the line, handling potential nulls
-    if (line['partner_bank_id'] != null &&
-        line['partner_bank_id'] is List &&
-        line['partner_bank_id'].isNotEmpty) {
-      selectedBankId = line['partner_bank_id'][0] as int?;
-    }
+  //   // Initialize values from the line, handling potential nulls
+  //   if (line['partner_bank_id'] != null &&
+  //       line['partner_bank_id'] is List &&
+  //       line['partner_bank_id'].isNotEmpty) {
+  //     selectedBankId = line['partner_bank_id'][0] as int?;
+  //   }
 
-    if (line['receive_date'] != null &&
-        line['receive_date'].toString().isNotEmpty) {
-      try {
-        receiveDate = DateTime.parse(line['receive_date']);
-      } catch (e) {
-        // Handle parsing error if date is not in correct format
-        print("Error parsing receive_date: $e");
-      }
-    }
+  //   if (line['receive_date'] != null &&
+  //       line['receive_date'].toString().isNotEmpty) {
+  //     try {
+  //       receiveDate = DateTime.parse(line['receive_date']);
+  //     } catch (e) {
+  //       // Handle parsing error if date is not in correct format
+  //       print("Error parsing receive_date: $e");
+  //     }
+  //   }
 
-    if (line['date'] != null && line['date'].toString().isNotEmpty) {
-      try {
-        giroDate = DateTime.parse(line['date']);
-      } catch (e) {
-        // Handle parsing error if date is not in correct format
-        print("Error parsing date: $e");
-      }
-    }
+  //   if (line['date'] != null && line['date'].toString().isNotEmpty) {
+  //     try {
+  //       giroDate = DateTime.parse(line['date']);
+  //     } catch (e) {
+  //       // Handle parsing error if date is not in correct format
+  //       print("Error parsing date: $e");
+  //     }
+  //   }
 
-    if (line['date_end'] != null && line['date_end'].toString().isNotEmpty) {
-      try {
-        giroExpiredDate = DateTime.parse(line['date_end']);
-      } catch (e) {
-        // Handle parsing error if date is not in correct format
-        print("Error parsing date_end: $e");
-      }
-    }
+  //   if (line['date_end'] != null && line['date_end'].toString().isNotEmpty) {
+  //     try {
+  //       giroExpiredDate = DateTime.parse(line['date_end']);
+  //     } catch (e) {
+  //       // Handle parsing error if date is not in correct format
+  //       print("Error parsing date_end: $e");
+  //     }
+  //   }
 
-    showDialog(
-      context: context,
-      builder: (BuildContext context) {
-        return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            width: MediaQuery.of(context).size.width * 0.9,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    "Edit Giro Line",
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 16),
+  //   showDialog(
+  //     context: context,
+  //     builder: (BuildContext context) {
+  //       return Dialog(
+  //         shape: RoundedRectangleBorder(
+  //           borderRadius: BorderRadius.circular(16),
+  //         ),
+  //         child: Container(
+  //           padding: const EdgeInsets.all(16),
+  //           width: MediaQuery.of(context).size.width * 0.9,
+  //           child: SingleChildScrollView(
+  //             child: Column(
+  //               mainAxisSize: MainAxisSize.min,
+  //               crossAxisAlignment: CrossAxisAlignment.start,
+  //               children: [
+  //                 const Text(
+  //                   "Edit Giro Line",
+  //                   style: TextStyle(
+  //                     fontSize: 18,
+  //                     fontWeight: FontWeight.bold,
+  //                   ),
+  //                 ),
+  //                 const SizedBox(height: 16),
 
-                  // Giro Number
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Giro Number *", // Added asterisk to indicate required field
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: TextFormField(
-                        controller: giroNumberController,
-                        decoration: const InputDecoration(
-                          hintText: 'Enter giro number',
-                          border: InputBorder.none,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
+  //                 // Giro Number
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: ListTile(
+  //                     title: const Text(
+  //                       "Giro Number *", // Added asterisk to indicate required field
+  //                       style: TextStyle(fontSize: 14),
+  //                     ),
+  //                     subtitle: TextFormField(
+  //                       controller: giroNumberController,
+  //                       decoration: const InputDecoration(
+  //                         hintText: 'Enter giro number',
+  //                         border: InputBorder.none,
+  //                       ),
+  //                       style: const TextStyle(
+  //                         fontSize: 16,
+  //                         fontWeight: FontWeight.bold,
+  //                       ),
+  //                     ),
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
+  //                 const SizedBox(height: 16),
 
-                  // Bank Selection (Optional)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: FutureBuilder<List<Map<String, dynamic>>>(
-                      future: banks,
-                      builder: (context, snapshot) {
-                        if (snapshot.connectionState ==
-                            ConnectionState.waiting) {
-                          return const ListTile(
-                              title: Text("Loading banks..."));
-                        }
+  //                 // Bank Selection (Optional)
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: FutureBuilder<List<Map<String, dynamic>>>(
+  //                     future: banks,
+  //                     builder: (context, snapshot) {
+  //                       if (snapshot.connectionState ==
+  //                           ConnectionState.waiting) {
+  //                         return const ListTile(
+  //                             title: Text("Loading banks..."));
+  //                       }
 
-                        if (snapshot.hasError) {
-                          return ListTile(
-                              title: Text("Error: ${snapshot.error}"));
-                        }
+  //                       if (snapshot.hasError) {
+  //                         return ListTile(
+  //                             title: Text("Error: ${snapshot.error}"));
+  //                       }
 
-                        final bankList = snapshot.data ?? [];
-                        return ListTile(
-                          title: const Text(
-                            "Bank Penerbit", // Removed asterisk as it's optional
-                            style: TextStyle(fontSize: 14),
-                          ),
-                          subtitle: DropdownButton<int?>(
-                            value: selectedBankId,
-                            isExpanded: true,
-                            hint: const Text("Select Bank (Optional)"),
-                            onChanged: (int? newValue) {
-                              selectedBankId = newValue;
-                              (context as Element).markNeedsBuild();
-                            },
-                            items: [
-                              // Add a null option to allow clearing selection
-                              const DropdownMenuItem<int?>(
-                                value: null,
-                                child: Text("None"),
-                              ),
-                              ...bankList.map<DropdownMenuItem<int>>((bank) {
-                                return DropdownMenuItem<int>(
-                                  value: bank['id'] as int,
-                                  child: Text(
-                                      "${bank['bank_name'] ?? 'Unknown'} - ${bank['acc_number'] ?? ''}"),
-                                );
-                              }).toList(),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
+  //                       final bankList = snapshot.data ?? [];
+  //                       return ListTile(
+  //                         title: const Text(
+  //                           "Bank Penerbit", // Removed asterisk as it's optional
+  //                           style: TextStyle(fontSize: 14),
+  //                         ),
+  //                         subtitle: DropdownButton<int?>(
+  //                           value: selectedBankId,
+  //                           isExpanded: true,
+  //                           hint: const Text("Select Bank (Optional)"),
+  //                           onChanged: (int? newValue) {
+  //                             selectedBankId = newValue;
+  //                             (context as Element).markNeedsBuild();
+  //                           },
+  //                           items: [
+  //                             // Add a null option to allow clearing selection
+  //                             const DropdownMenuItem<int?>(
+  //                               value: null,
+  //                               child: Text("None"),
+  //                             ),
+  //                             ...bankList.map<DropdownMenuItem<int>>((bank) {
+  //                               return DropdownMenuItem<int>(
+  //                                 value: bank['id'] as int,
+  //                                 child: Text(
+  //                                     "${bank['bank_name'] ?? 'Unknown'} - ${bank['acc_number'] ?? ''}"),
+  //                               );
+  //                             }).toList(),
+  //                           ],
+  //                         ),
+  //                       );
+  //                     },
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
+  //                 const SizedBox(height: 16),
 
-                  // Receive Date
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Receive Date *", // Added asterisk to indicate required field
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        receiveDate == null
-                            ? "Select date"
-                            : DateFormat('dd-MM-yyyy').format(receiveDate!),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color:
-                              receiveDate == null ? Colors.grey : Colors.black,
-                        ),
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: receiveDate ?? DateTime.now(),
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          receiveDate = picked;
-                          (context as Element).markNeedsBuild();
-                        }
-                      },
-                    ),
-                  ),
+  //                 // Receive Date
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: ListTile(
+  //                     title: const Text(
+  //                       "Receive Date *", // Added asterisk to indicate required field
+  //                       style: TextStyle(fontSize: 14),
+  //                     ),
+  //                     subtitle: Text(
+  //                       receiveDate == null
+  //                           ? "Select date"
+  //                           : DateFormat('dd-MM-yyyy').format(receiveDate!),
+  //                       style: TextStyle(
+  //                         fontSize: 16,
+  //                         fontWeight: FontWeight.bold,
+  //                         color:
+  //                             receiveDate == null ? Colors.grey : Colors.black,
+  //                       ),
+  //                     ),
+  //                     trailing: const Icon(Icons.calendar_today),
+  //                     onTap: () async {
+  //                       final DateTime? picked = await showDatePicker(
+  //                         context: context,
+  //                         initialDate: receiveDate ?? DateTime.now(),
+  //                         firstDate: DateTime(2000),
+  //                         lastDate: DateTime(2100),
+  //                       );
+  //                       if (picked != null) {
+  //                         receiveDate = picked;
+  //                         (context as Element).markNeedsBuild();
+  //                       }
+  //                     },
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
+  //                 const SizedBox(height: 16),
 
-                  // Giro Date (Optional)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Giro Date", // Removed asterisk as it's optional
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        giroDate == null
-                            ? "Select date (Optional)"
-                            : DateFormat('dd-MM-yyyy').format(giroDate!),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: giroDate == null ? Colors.grey : Colors.black,
-                        ),
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: DateTime(2000),
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          giroDate = picked;
-                          if (giroExpiredDate != null &&
-                              giroExpiredDate!.isBefore(giroDate!)) {
-                            giroExpiredDate = null;
-                          }
-                          (context as Element).markNeedsBuild();
-                        }
-                      },
-                    ),
-                  ),
+  //                 // Tanggal Giro Cair (Optional)
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: ListTile(
+  //                     title: const Text(
+  //                       "Tanggal Giro Cair", // Removed asterisk as it's optional
+  //                       style: TextStyle(fontSize: 14),
+  //                     ),
+  //                     subtitle: Text(
+  //                       giroDate == null
+  //                           ? "Select date (Optional)"
+  //                           : DateFormat('dd-MM-yyyy').format(giroDate!),
+  //                       style: TextStyle(
+  //                         fontSize: 16,
+  //                         fontWeight: FontWeight.bold,
+  //                         color: giroDate == null ? Colors.grey : Colors.black,
+  //                       ),
+  //                     ),
+  //                     trailing: const Icon(Icons.calendar_today),
+  //                     onTap: () async {
+  //                       final DateTime? picked = await showDatePicker(
+  //                         context: context,
+  //                         initialDate: DateTime.now(),
+  //                         firstDate: DateTime(2000),
+  //                         lastDate: DateTime(2100),
+  //                       );
+  //                       if (picked != null) {
+  //                         giroDate = picked;
+  //                         if (giroExpiredDate != null &&
+  //                             giroExpiredDate!.isBefore(giroDate!)) {
+  //                           giroExpiredDate = null;
+  //                         }
+  //                         (context as Element).markNeedsBuild();
+  //                       }
+  //                     },
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
+  //                 const SizedBox(height: 16),
 
-                  // Giro Expired Date
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Giro Expired Date *", // Added asterisk to indicate required field
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: Text(
-                        giroExpiredDate == null
-                            ? "Select date"
-                            : DateFormat('dd-MM-yyyy').format(giroExpiredDate!),
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: giroExpiredDate == null
-                              ? Colors.grey
-                              : Colors.black,
-                        ),
-                      ),
-                      trailing: const Icon(Icons.calendar_today),
-                      onTap: () async {
-                        final DateTime? picked = await showDatePicker(
-                          context: context,
-                          initialDate: DateTime.now(),
-                          firstDate: giroDate ??
-                              DateTime(
-                                  2000), // If giroDate is set, can't be earlier
-                          lastDate: DateTime(2100),
-                        );
-                        if (picked != null) {
-                          // Logic check: Ensure expiry date isn't before giro date
-                          if (giroDate != null && picked.isBefore(giroDate!)) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Expired date cannot be before giro date'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                          } else {
-                            giroExpiredDate = picked;
-                            (context as Element).markNeedsBuild();
-                          }
-                        }
-                      },
-                    ),
-                  ),
+  //                 // Giro Expired Date
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: ListTile(
+  //                     title: const Text(
+  //                       "Giro Expired Date *", // Added asterisk to indicate required field
+  //                       style: TextStyle(fontSize: 14),
+  //                     ),
+  //                     subtitle: Text(
+  //                       giroExpiredDate == null
+  //                           ? "Select date"
+  //                           : DateFormat('dd-MM-yyyy').format(giroExpiredDate!),
+  //                       style: TextStyle(
+  //                         fontSize: 16,
+  //                         fontWeight: FontWeight.bold,
+  //                         color: giroExpiredDate == null
+  //                             ? Colors.grey
+  //                             : Colors.black,
+  //                       ),
+  //                     ),
+  //                     trailing: const Icon(Icons.calendar_today),
+  //                     onTap: () async {
+  //                       final DateTime? picked = await showDatePicker(
+  //                         context: context,
+  //                         initialDate: DateTime.now(),
+  //                         firstDate: giroDate ??
+  //                             DateTime(
+  //                                 2000), // If giroDate is set, can't be earlier
+  //                         lastDate: DateTime(2100),
+  //                       );
+  //                       if (picked != null) {
+  //                         // Logic check: Ensure expiry date isn't before Tanggal Giro Cair
+  //                         if (giroDate != null && picked.isBefore(giroDate!)) {
+  //                           ScaffoldMessenger.of(context).showSnackBar(
+  //                             const SnackBar(
+  //                               content: Text(
+  //                                   'Expired date cannot be before Tanggal Giro Cair'),
+  //                               backgroundColor: Colors.red,
+  //                             ),
+  //                           );
+  //                         } else {
+  //                           giroExpiredDate = picked;
+  //                           (context as Element).markNeedsBuild();
+  //                         }
+  //                       }
+  //                     },
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
+  //                 const SizedBox(height: 16),
 
-                  // Amount (Optional)
-                  Container(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    decoration: BoxDecoration(
-                      border: Border.all(color: Colors.grey.shade300),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: ListTile(
-                      title: const Text(
-                        "Amount", // Removed asterisk as it's optional
-                        style: TextStyle(fontSize: 14),
-                      ),
-                      subtitle: TextFormField(
-                        controller: amountController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          prefixText: 'Rp ',
-                          hintText: 'Enter amount (Optional)',
-                          border: InputBorder.none,
-                        ),
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ),
-                  ),
+  //                 // Amount (Optional)
+  //                 Container(
+  //                   padding: const EdgeInsets.symmetric(vertical: 8),
+  //                   decoration: BoxDecoration(
+  //                     border: Border.all(color: Colors.grey.shade300),
+  //                     borderRadius: BorderRadius.circular(8),
+  //                   ),
+  //                   child: ListTile(
+  //                     title: const Text(
+  //                       "Amount", // Removed asterisk as it's optional
+  //                       style: TextStyle(fontSize: 14),
+  //                     ),
+  //                     subtitle: TextFormField(
+  //                       controller: amountController,
+  //                       keyboardType: TextInputType.number,
+  //                       decoration: const InputDecoration(
+  //                         prefixText: 'Rp ',
+  //                         hintText: 'Enter amount (Optional)',
+  //                         border: InputBorder.none,
+  //                       ),
+  //                       style: const TextStyle(
+  //                         fontSize: 16,
+  //                         fontWeight: FontWeight.bold,
+  //                       ),
+  //                     ),
+  //                   ),
+  //                 ),
 
-                  const SizedBox(height: 16),
-                  // Buttons
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.end,
-                    children: [
-                      TextButton(
-                        onPressed: () {
-                          Navigator.of(context).pop(); // Close dialog
-                        },
-                        child: const Text("Cancel"),
-                      ),
-                      const SizedBox(width: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          // Validate only the mandatory fields
-                          if (giroNumberController.text.isEmpty) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please enter a giro number'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                            return;
-                          }
+  //                 const SizedBox(height: 16),
+  //                 // Buttons
+  //                 Row(
+  //                   mainAxisAlignment: MainAxisAlignment.end,
+  //                   children: [
+  //                     TextButton(
+  //                       onPressed: () {
+  //                         Navigator.of(context).pop(); // Close dialog
+  //                       },
+  //                       child: const Text("Cancel"),
+  //                     ),
+  //                     const SizedBox(width: 16),
+  //                     ElevatedButton(
+  //                       onPressed: () {
+  //                         // Validate only the mandatory fields
+  //                         if (giroNumberController.text.isEmpty) {
+  //                           ScaffoldMessenger.of(context).showSnackBar(
+  //                             const SnackBar(
+  //                               content: Text('Please enter a giro number'),
+  //                               backgroundColor: Colors.red,
+  //                             ),
+  //                           );
+  //                           return;
+  //                         }
 
-                          if (receiveDate == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text('Please select a receive date'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                            return;
-                          }
+  //                         if (receiveDate == null) {
+  //                           ScaffoldMessenger.of(context).showSnackBar(
+  //                             const SnackBar(
+  //                               content: Text('Please select a receive date'),
+  //                               backgroundColor: Colors.red,
+  //                             ),
+  //                           );
+  //                           return;
+  //                         }
 
-                          if (giroExpiredDate == null) {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content:
-                                    Text('Please select a giro expired date'),
-                                backgroundColor: Colors.red,
-                              ),
-                            );
-                            return;
-                          }
+  //                         if (giroExpiredDate == null) {
+  //                           ScaffoldMessenger.of(context).showSnackBar(
+  //                             const SnackBar(
+  //                               content:
+  //                                   Text('Please select a giro expired date'),
+  //                               backgroundColor: Colors.red,
+  //                             ),
+  //                           );
+  //                           return;
+  //                         }
 
-                          // Create map with only the mandatory fields
-                          Map<String, dynamic> updatedValues = {
-                            'name': giroNumberController.text,
-                            'receive_date':
-                                DateFormat('yyyy-MM-dd').format(receiveDate!),
-                            'date_end': DateFormat('yyyy-MM-dd')
-                                .format(giroExpiredDate!),
-                          };
+  //                         // Create map with only the mandatory fields
+  //                         Map<String, dynamic> updatedValues = {
+  //                           'name': giroNumberController.text,
+  //                           'receive_date':
+  //                               DateFormat('yyyy-MM-dd').format(receiveDate!),
+  //                           'date_end': DateFormat('yyyy-MM-dd')
+  //                               .format(giroExpiredDate!),
+  //                         };
 
-                          // Add optional fields only if they have values
-                          if (selectedBankId != null) {
-                            updatedValues['partner_bank_id'] = selectedBankId;
-                          }
+  //                         // Add optional fields only if they have values
+  //                         if (selectedBankId != null) {
+  //                           updatedValues['partner_bank_id'] = selectedBankId;
+  //                         }
 
-                          if (giroDate != null) {
-                            updatedValues['date'] =
-                                DateFormat('yyyy-MM-dd').format(giroDate!);
-                          }
+  //                         if (giroDate != null) {
+  //                           updatedValues['date'] =
+  //                               DateFormat('yyyy-MM-dd').format(giroDate!);
+  //                         }
 
-                          if (amountController.text.isNotEmpty) {
-                            updatedValues['check_amount'] =
-                                double.tryParse(amountController.text) ?? 0.0;
-                          } else {
-                            updatedValues['check_amount'] =
-                                0.0; // Ensure amount is always sent as 0 if empty
-                          }
+  //                         if (amountController.text.isNotEmpty) {
+  //                           updatedValues['check_amount'] =
+  //                               double.tryParse(amountController.text) ?? 0.0;
+  //                         } else {
+  //                           updatedValues['check_amount'] =
+  //                               0.0; // Ensure amount is always sent as 0 if empty
+  //                         }
 
-                          _updateLine(line['id'], updatedValues);
-                          Navigator.of(context).pop();
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.blue,
-                          foregroundColor: Colors.white,
-                        ),
-                        child: const Text("Save"),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
+  //                         _updateLine(line['id'], updatedValues);
+  //                         Navigator.of(context).pop();
+  //                       },
+  //                       style: ElevatedButton.styleFrom(
+  //                         backgroundColor: Colors.blue,
+  //                         foregroundColor: Colors.white,
+  //                       ),
+  //                       child: const Text("Save"),
+  //                     ),
+  //                   ],
+  //                 ),
+  //               ],
+  //             ),
+  //           ),
+  //         ),
+  //       );
+  //     },
+  //   );
+  // }
 
-  void _updateLine(int lineId, Map<String, dynamic> values) {
-    widget.odooService.updateCheckBookLine(lineId, values).then((_) {
-      // Reload data after update
-      setState(() {
-        _loadCheckBookDetails();
-        _loadCheckBookLines();
-      });
+  // void _updateLine(int lineId, Map<String, dynamic> values) {
+  //   widget.odooService.updateCheckBookLine(lineId, values).then((_) {
+  //     // Reload data after update
+  //     setState(() {
+  //       _loadCheckBookDetails();
+  //       _loadCheckBookLines();
+  //     });
 
-      // Show success message
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Giro line updated successfully'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    }).catchError((error) {
-      // Show error message
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to update giro line: $error'),
-          backgroundColor: Colors.red,
-        ),
-      );
-    });
-  }
+  //     // Show success message
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(
+  //         content: Text('Giro line updated successfully'),
+  //         backgroundColor: Colors.green,
+  //       ),
+  //     );
+  //   }).catchError((error) {
+  //     // Show error message
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       SnackBar(
+  //         content: Text('Failed to update giro line: $error'),
+  //         backgroundColor: Colors.red,
+  //       ),
+  //     );
+  //   });
+  // }
 
   // void _showDeleteConfirmation(int lineId) {
   //   showDialog(
@@ -1088,28 +1128,31 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                               if (selectedCustomerId != null) {
                                 for (var customer in customerList) {
                                   if (customer['id'] == selectedCustomerId) {
-                                    selectedCustomerName =
-                                        customer['name'] ?? 'Unknown';
+                                    // Tambahkan pengecekan parent
+                                    if (customer['parent_id'] != null &&
+                                        customer['parent_id'] is List) {
+                                      final parentId =
+                                          customer['parent_id'][0] as int;
+                                      final parent = customerList.firstWhere(
+                                        (c) => c['id'] == parentId,
+                                        orElse: () => {'name': ''},
+                                      );
+                                      selectedCustomerName =
+                                          '${parent['name']} - ${customer['name'] ?? 'Unknown'}';
+                                    } else {
+                                      selectedCustomerName =
+                                          customer['name'] ?? 'Unknown';
+                                    }
                                     break;
                                   }
                                 }
                               }
-
                               return Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   ListTile(
-                                    title: const Text(
-                                      "Customer",
-                                      style: TextStyle(fontSize: 14),
-                                    ),
-                                    subtitle: Text(
-                                      selectedCustomerName,
-                                      style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                      ),
-                                    ),
+                                    title: const Text("Customer"),
+                                    subtitle: Text(selectedCustomerName),
                                     trailing: const Icon(Icons.search),
                                     onTap: () {
                                       setState(() {
@@ -1184,9 +1227,23 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                       itemBuilder: (context, index) {
                                         final customer =
                                             filteredCustomers[index];
+                                        String displayName =
+                                            customer['name'] ?? 'Unknown';
+                                        // Tambahkan pengecekan parent
+                                        if (customer['parent_id'] != null &&
+                                            customer['parent_id'] is List) {
+                                          final parentId =
+                                              customer['parent_id'][0] as int;
+                                          final parent =
+                                              customerList.firstWhere(
+                                            (c) => c['id'] == parentId,
+                                            orElse: () => {'name': ''},
+                                          );
+                                          displayName =
+                                              '${parent['name']} - $displayName';
+                                        }
                                         return ListTile(
-                                          title: Text(
-                                              customer['name'] ?? 'Unknown'),
+                                          title: Text(displayName),
                                           onTap: () {
                                             setState(() {
                                               selectedCustomerId =
@@ -1652,8 +1709,8 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                       itemCount: lines.length,
                       itemBuilder: (context, index) {
                         final line = lines[index];
-                        final bool canEdit = checkBook['state'] == 'draft' ||
-                            checkBook['state'] == 'confirm';
+                        // final bool canEdit = checkBook['state'] == 'draft' ||
+                        //     checkBook['state'] == 'confirm';
 
                         return Card(
                           margin: const EdgeInsets.symmetric(
@@ -1679,7 +1736,7 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                         _getSafeValue(line['partner_bank_id'])),
                                     _buildInfoRow("Receive Date",
                                         _getSafeValue(line['receive_date'])),
-                                    _buildInfoRow("Giro Date",
+                                    _buildInfoRow("Tanggal Giro Cair",
                                         _getSafeValue(line['date'])),
                                     _buildInfoRow("Giro Expired",
                                         _getSafeValue(line['date_end'])),
@@ -1710,31 +1767,31 @@ class _CheckGiroDetailScreenState extends State<CheckGiroDetailScreen> {
                                 ),
                               ),
                               // Edit and Delete buttons
-                              if (canEdit)
-                                Positioned(
-                                  top: 8,
-                                  right: 8,
-                                  child: Row(
-                                    children: [
-                                      if (line['payment_status'] == 'no')
-                                        IconButton(
-                                          icon: const Icon(Icons.edit,
-                                              color: Colors.blue, size: 20),
-                                          onPressed: () {
-                                            _showEditLineDialog(line);
-                                          },
-                                        ),
-                                      // if (line['payment_status'] == 'no')
-                                      //   IconButton(
-                                      //     icon: const Icon(Icons.delete,
-                                      //         color: Colors.red, size: 20),
-                                      //     onPressed: () {
-                                      //       _showDeleteConfirmation(line['id']);
-                                      //     },
-                                      //   ),
-                                    ],
-                                  ),
-                                ),
+                              // if (canEdit)
+                              //   Positioned(
+                              //     top: 8,
+                              //     right: 8,
+                              //     child: Row(
+                              //       children: [
+                              //         if (line['payment_status'] == 'no')
+                              //           IconButton(
+                              //             icon: const Icon(Icons.edit,
+                              //                 color: Colors.blue, size: 20),
+                              //             onPressed: () {
+                              //               _showEditLineDialog(line);
+                              //             },
+                              //           ),
+                              //         // if (line['payment_status'] == 'no')
+                              //         //   IconButton(
+                              //         //     icon: const Icon(Icons.delete,
+                              //         //         color: Colors.red, size: 20),
+                              //         //     onPressed: () {
+                              //         //       _showDeleteConfirmation(line['id']);
+                              //         //     },
+                              //         //   ),
+                              //       ],
+                              //     ),
+                              //   ),
                             ],
                           ),
                         );

@@ -36,12 +36,12 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
   List<Map<String, dynamic>> _users = [];
 
   @override
-  void initState() {
-    super.initState();
-    _isEditMode = widget.checkBookId != null;
-    _loadData();
-    _setDefaultDate();
-  }
+void initState() {
+  super.initState();
+  _isEditMode = widget.checkBookId != null;
+  _loadData();
+  _setDefaultDate();
+}
 
   @override
   void dispose() {
@@ -209,84 +209,122 @@ class _GiroFormHeaderScreenState extends State<GiroFormHeaderScreen> {
   }
 
   Future<void> _showCustomerSearchDialog() async {
-    final TextEditingController _searchController = TextEditingController();
-    List<Map<String, dynamic>> _filteredPartners = List.from(_partners);
+  final TextEditingController _searchController = TextEditingController();
+  List<Map<String, dynamic>> _filteredPartners = List.from(_partners);
 
-    void _filterPartners(String query) {
-      _filteredPartners = _partners
-          .where((partner) => partner['name']
-              .toString()
-              .toLowerCase()
-              .contains(query.toLowerCase()))
-          .toList();
-    }
+  void _filterPartners(String query) {
+    _filteredPartners = _partners
+        .where((partner) => (partner['name']?.toString().toLowerCase() ?? '')
+            .contains(query.toLowerCase()))
+        .toList();
+  }
 
-    final selectedPartner = await showDialog<Map<String, dynamic>>(
-      context: context,
-      builder: (BuildContext context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: const Text('Select Customer'),
-              content: Container(
-                width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(
-                      controller: _searchController,
-                      decoration: const InputDecoration(
-                        labelText: 'Search',
-                        prefixIcon: Icon(Icons.search),
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (value) {
-                        setState(() {
-                          _filterPartners(value);
-                        });
-                      },
-                      autofocus: true,
-                    ),
-                    const SizedBox(height: 10),
-                    Expanded(
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: _filteredPartners.length,
-                        itemBuilder: (context, index) {
-                          final partner = _filteredPartners[index];
-                          return ListTile(
-                            title: Text(partner['name']),
-                            onTap: () {
-                              Navigator.of(context).pop(partner);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(context).pop();
-                  },
-                  child: const Text('Cancel'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+  // Fungsi untuk mendapatkan nama parent
+  String? _getParentName(int? parentId) {
+  if (parentId == null) return null;
 
-    if (selectedPartner != null) {
-      setState(() {
-        _selectedPartnerId = selectedPartner['id'];
-        _selectedPartnerName = selectedPartner['name'];
-      });
+  for (var p in _partners) {
+    final id = p['id'];
+    if (id is int && id == parentId) {
+      return p['name'] as String?;
     }
   }
+
+  return null;
+}
+
+  final selectedPartner = await showDialog<Map<String, dynamic>>(
+    context: context,
+    builder: (BuildContext context) {
+      return StatefulBuilder(
+        builder: (context, setState) {
+          return AlertDialog(
+            title: const Text('Select Customer'),
+            content: Container(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    decoration: const InputDecoration(
+                      labelText: 'Search',
+                      prefixIcon: Icon(Icons.search),
+                      border: OutlineInputBorder(),
+                    ),
+                    onChanged: (value) {
+                      setState(() {
+                        _filterPartners(value);
+                      });
+                    },
+                    autofocus: true,
+                  ),
+                  const SizedBox(height: 10),
+                  Expanded(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _filteredPartners.length,
+                      itemBuilder: (context, index) {
+                        final partner = _filteredPartners[index];
+                        String displayName = partner['name'] ?? 'Unknown';
+
+                        // Cek apakah ada parent_id
+                        if (partner.containsKey('parent_id') &&
+                            partner['parent_id'] is List &&
+                            partner['parent_id'].isNotEmpty) {
+                          final parentId = partner['parent_id'][0] as int?;
+                          final parentName = _getParentName(parentId);
+                          if (parentName != null && parentName.isNotEmpty) {
+                            displayName = '$parentName - $displayName';
+                          }
+                        }
+
+                        return ListTile(
+                          title: Text(displayName),
+                          onTap: () {
+                            Navigator.of(context).pop(partner);
+                          },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel'),
+              ),
+            ],
+          );
+        },
+      );
+    },
+  );
+
+  if (selectedPartner != null) {
+    String displayName = selectedPartner['name'] ?? 'Unknown';
+
+    // Format ulang nama jika ada parent_id
+    if (selectedPartner.containsKey('parent_id') &&
+        selectedPartner['parent_id'] is List &&
+        selectedPartner['parent_id'].isNotEmpty) {
+      final parentId = selectedPartner['parent_id'][0] as int?;
+      final parentName = _getParentName(parentId);
+      if (parentName != null && parentName.isNotEmpty) {
+        displayName = '$parentName - $displayName';
+      }
+    }
+
+    setState(() {
+      _selectedPartnerId = selectedPartner['id'];
+      _selectedPartnerName = displayName;
+    });
+  }
+}
 
   @override
   Widget build(BuildContext context) {

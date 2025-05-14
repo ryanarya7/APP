@@ -39,11 +39,11 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
 
   Future<void> _loadData() async {
     try {
-      final fetchedCustomers = await widget.odooService.fetchCustomers();
+      final fetchedCustomers = await widget.odooService.fetchCustomerz();
       final fetchedSalespersons = await widget.odooService.fetchSalespersons();
       final fetchedPaymentTerms = await widget.odooService.fetchPaymentTerms();
       final fetchedWarehouses = await widget.odooService.fetchWarehouses();
-      final fetchedAddresses = await widget.odooService.fetchCustomers();
+      final fetchedAddresses = await widget.odooService.fetchCustomerz();
 
       final loggedInUser = await widget.odooService.fetchUser();
 
