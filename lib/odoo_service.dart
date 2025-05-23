@@ -109,13 +109,60 @@ class OdooService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchProducts() async {
+  Future<void> _saveProductsToCache(
+      String cacheKey, List<Map<String, dynamic>> products) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encodedData = json.encode(products);
+    await prefs.setString(cacheKey, encodedData);
+    await prefs.setInt(
+        '$cacheKey.timestamp', DateTime.now().millisecondsSinceEpoch);
+  }
+
+  Future<List<Map<String, dynamic>>?> _loadProductsFromCache(
+      String cacheKey) async {
+    final prefs = await SharedPreferences.getInstance();
+    final encodedData = prefs.getString(cacheKey);
+    final timestamp = prefs.getInt('$cacheKey.timestamp');
+
+    if (encodedData != null && timestamp != null) {
+      final now = DateTime.now().millisecondsSinceEpoch;
+      final cacheDuration = 30 * 60 * 1000; // 30 menit
+      if (now - timestamp < cacheDuration) {
+        final List<dynamic> decodedData = json.decode(encodedData);
+        return decodedData.cast<Map<String, dynamic>>();
+      }
+    }
+    return null;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchProducts({
+    int limit = 25,
+    int offset = 0,
+    List<dynamic> domain = const [
+      ['detailed_type', '=', 'product']
+    ],
+  }) async {
+    final cacheKey = json.encode({
+      'domain': domain,
+      'limit': limit,
+      'offset': offset,
+    });
+
+    // Coba muat dari cache
+    final cachedData = await _loadProductsFromCache(cacheKey);
+    if (cachedData != null) {
+      print('Using cached data for $cacheKey');
+      return cachedData;
+    }
+
+    // Jika tidak ada di cache, fetch dari server
     await checkSession();
     try {
+      print('Sending domain to Odoo: $domain');
       final response = await _client.callKw({
-        'model': 'product.product',
+        'model': 'product.template',
         'method': 'search_read',
-        'args': [],
+        'args': [domain],
         'kwargs': {
           'fields': [
             'id',
@@ -124,26 +171,25 @@ class OdooService {
             'image_1920',
             'qty_available',
             'default_code',
-            'uom_id',
-            'company_id',
+            'categ_id',
+            'product_variant_ids'
           ],
+          'limit': limit,
+          'offset': offset,
         },
       });
 
-      // Parsing hasil dan memastikan company_id memiliki nama
-      List<Map<String, dynamic>> products =
-          List<Map<String, dynamic>>.from(response);
-      for (var product in products) {
-        product['vendor_name'] = product['company_id'] != null &&
-                product['company_id'] is List &&
-                product['company_id'].length >= 2
-            ? product['company_id'][1] // Ambil nama dari company_id
-            : 'No Vendor';
-      }
+      // Pastikan setiap item adalah Map<String, dynamic>
+      final List<Map<String, dynamic>> products = (response as List)
+          .map((item) => item as Map<String, dynamic>)
+          .toList();
 
+      // Simpan ke cache
+      await _saveProductsToCache(cacheKey, products);
       return products;
     } catch (e) {
-      throw Exception('Failed to fetch products: $e');
+      print('Error fetching products: $e');
+      throw Exception('Failed to fetch products template: $e');
     }
   }
 
@@ -324,21 +370,32 @@ class OdooService {
   }
 
   Future<List<Map<String, dynamic>>> fetchPaymentTerms() async {
-    await checkSession();
-    try {
-      final response = await _client.callKw({
-        'model': 'account.payment.term',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'fields': ['id', 'name'],
-        },
-      });
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      throw Exception('Failed to fetch payment terms: $e');
-    }
+  final String cacheKey = 'payment_terms_cache';
+  final Duration cacheTTL = const Duration(minutes: 60); // TTL 1 jam
+
+  final cached = await _loadFromCache(cacheKey, cacheTTL);
+  if (cached != null) {
+    print('Menggunakan payment terms dari cache');
+    return cached;
   }
+
+  await checkSession();
+  try {
+    final response = await _client.callKw({
+      'model': 'account.payment.term',
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'fields': ['id', 'name'],
+      },
+    });
+    final List<Map<String, dynamic>> terms = List<Map<String, dynamic>>.from(response);
+    await _saveToCache(cacheKey, terms);
+    return terms;
+  } catch (e) {
+    throw Exception('Failed to fetch payment terms: $e');
+  }
+}
 
   Future<List<Map<String, dynamic>>> fetchWarehouses() async {
     await checkSession();
@@ -391,40 +448,73 @@ class OdooService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchCustomerz() async {
-    await checkSession();
-    try {
-      final response = await _client.callKw({
-        'model': 'res.partner',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'domain': [
-            ['parent_id', '=', false]
-          ],
-          'fields': [
-            'id',
-            'name',
-            'street',
-            'phone',
-            'vat',
-            'property_payment_term_id'
-          ],
-        },
-      });
-      if (response is List && response.isNotEmpty && response[0] is Map) {
-        return List<Map<String, dynamic>>.from(response);
-      } else {
-        throw Exception('Invalid data format received from server');
-      }
-    } catch (e) {
-      // Jika error karena sesi kadaluarsa, minta login ulang
-      if (e.toString().contains('Session expired')) {
-        // Redirect ke halaman login atau trigger logout
-      }
-      throw Exception('Failed to fetch customers: $e');
-    }
+Future<void> _saveToCache(String key, List<Map<String, dynamic>> data) async {
+  final prefs = await SharedPreferences.getInstance();
+  final encoded = json.encode(data.map((item) => item).toList());
+  await prefs.setString(key, encoded);
+  await prefs.setInt('$key.timestamp', DateTime.now().millisecondsSinceEpoch);
+}
+
+// Utility untuk memuat data dari cache
+Future<List<Map<String, dynamic>>?> _loadFromCache(String key, Duration ttl) async {
+  final prefs = await SharedPreferences.getInstance();
+  final timestamp = prefs.getInt('$key.timestamp');
+  final encoded = prefs.getString(key);
+
+  if (timestamp == null || encoded == null) return null;
+
+  final now = DateTime.now().millisecondsSinceEpoch;
+  if (now - timestamp > ttl.inMilliseconds) {
+    return null; // Cache kadaluarsa
   }
+
+  try {
+    final decoded = json.decode(encoded) as List;
+    return decoded.map((item) => item as Map<String, dynamic>).toList();
+  } catch (e) {
+    print('Error parsing cached data: $e');
+    return null;
+  }
+}
+
+  Future<List<Map<String, dynamic>>> fetchCustomerz() async {
+  final String cacheKey = 'customers_cache';
+  final Duration cacheTTL = const Duration(minutes: 30); // TTL 30 menit
+
+  // Coba muat dari cache
+  final cached = await _loadFromCache(cacheKey, cacheTTL);
+  if (cached != null) {
+    print('Menggunakan data customer dari cache');
+    return cached;
+  }
+
+  // Jika tidak ada di cache, fetch dari server
+  await checkSession();
+  try {
+    final response = await _client.callKw({
+      'model': 'res.partner',
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'domain': [['parent_id', '=', false]],
+        'fields': ['id', 'name', 'street', 'phone', 'vat', 'property_payment_term_id'],
+      },
+    });
+
+    if (response is List && response.isNotEmpty && response[0] is Map) {
+      final List<Map<String, dynamic>> customers = List<Map<String, dynamic>>.from(response);
+      await _saveToCache(cacheKey, customers); // Simpan ke cache
+      return customers;
+    } else {
+      throw Exception('Invalid data format received from server');
+    }
+  } catch (e) {
+    if (e.toString().contains('Session expired')) {
+      // Redirect ke halaman login atau trigger logout
+    }
+    throw Exception('Failed to fetch customers: $e');
+  }
+}
 
   // Membuat Quotation Baru
   Future<int> createQuotation(Map<String, dynamic> data) async {
@@ -790,37 +880,40 @@ class OdooService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchCustomerAddresses(
-      int customerId) async {
-    await checkSession();
-    try {
-      final response = await _client.callKw({
-        'model': 'res.partner',
-        'method': 'search_read',
-        'args': [],
-        'kwargs': {
-          'domain': [
-            ['parent_id', '=', customerId], // Mengambil anak dari customer
-            [
-              'type',
-              'in',
-              ['invoice', 'delivery']
-            ], // Ambil tipe invoice/delivery
-          ],
-          'fields': [
-            'id',
-            'name',
-            'street',
-            'type',
-            'vat'
-          ], // Dapatkan ID, nama, alamat, dan tipe
-        },
-      });
-      return List<Map<String, dynamic>>.from(response);
-    } catch (e) {
-      throw Exception('Failed to fetch customer addresses: $e');
-    }
+  Future<List<Map<String, dynamic>>> fetchCustomerAddresses(int customerId) async {
+  final String cacheKey = 'addresses_$customerId';
+  final Duration cacheTTL = const Duration(minutes: 30); // TTL 30 menit
+
+  // Coba muat dari cache
+  final cached = await _loadFromCache(cacheKey, cacheTTL);
+  if (cached != null) {
+    print('Menggunakan alamat customer $customerId dari cache');
+    return cached;
   }
+
+  // Jika tidak ada di cache, fetch dari server
+  await checkSession();
+  try {
+    final response = await _client.callKw({
+      'model': 'res.partner',
+      'method': 'search_read',
+      'args': [],
+      'kwargs': {
+        'domain': [
+          ['parent_id', '=', customerId],
+          ['type', 'in', ['invoice', 'delivery']],
+        ],
+        'fields': ['id', 'name', 'street', 'type', 'vat'],
+      },
+    });
+
+    final List<Map<String, dynamic>> addresses = List<Map<String, dynamic>>.from(response);
+    await _saveToCache(cacheKey, addresses); // Simpan ke cache
+    return addresses;
+  } catch (e) {
+    throw Exception('Failed to fetch customer addresses: $e');
+  }
+}
 
   Future<String> fetchDeliveryOrderStatus(String saleOrderName) async {
     await checkSession();
@@ -1065,6 +1158,7 @@ class OdooService {
             'notes',
             'salesman',
             'account_move_ids',
+            'is_back_to_adm',
           ],
           'limit': 1, // Ambil hanya 1 record
         },
@@ -1869,7 +1963,7 @@ class OdooService {
     }
   }
 
-  Future<Map<String, String>> fetchInvoiceStatusBatch(
+  Future<Map<String, dynamic>> fetchInvoiceStatusBatch(
       List<String> orderNames) async {
     if (orderNames.isEmpty) {
       return {};
@@ -1891,32 +1985,28 @@ class OdooService {
           ]
         ],
         'kwargs': {
-          'fields': ['invoice_origin', 'payment_state', 'state'],
+          'fields': ['invoice_origin', 'invoice_status', 'state'],
         },
       });
 
-      // Create a map to store the best payment state for each order
-      Map<String, String> result = {};
+      // Create a map to store the invoice status for each order
+      Map<String, dynamic> result = {};
 
       // Process each invoice from the response
       for (var invoice in response) {
         if (invoice['invoice_origin'] != null) {
           String orderName = invoice['invoice_origin'];
-          String paymentState = invoice['payment_state'] ?? 'not_found';
+          var invoiceStatus = invoice['invoice_status'];
 
-          // If we already have a state for this order, only update if the new state is "better"
-          if (!result.containsKey(orderName) ||
-              _getPaymentStatePriority(paymentState) >
-                  _getPaymentStatePriority(result[orderName]!)) {
-            result[orderName] = paymentState;
-          }
+          // Store the invoice status as is
+          result[orderName] = invoiceStatus;
         }
       }
 
-      // For any orderNames that didn't match, set them to 'not_found'
+      // For any orderNames that didn't match, set them to unknown
       for (String orderName in orderNames) {
         if (!result.containsKey(orderName)) {
-          result[orderName] = 'not_found';
+          result[orderName] = 'unknown';
         }
       }
 
@@ -1924,25 +2014,6 @@ class OdooService {
     } catch (e) {
       print('Error fetching invoice statuses: $e');
       return {};
-    }
-  }
-
-  int _getPaymentStatePriority(String state) {
-    switch (state) {
-      case 'paid':
-        return 5;
-      case 'in_payment':
-        return 4;
-      case 'partial':
-        return 3;
-      case 'not_paid':
-        return 2;
-      case 'reversed':
-        return 1;
-      case 'not_found':
-        return 0;
-      default:
-        return 0;
     }
   }
 }

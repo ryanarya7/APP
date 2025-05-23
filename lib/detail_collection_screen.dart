@@ -187,6 +187,9 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
 
               final detail = snapshot.data!;
               final state = detail['state'];
+              final returnadm = detail['is_back_to_adm'];
+              print(
+                  'is_back_to_adm: $returnadm (Type: ${returnadm.runtimeType})');
 
               if (state == 'transfer') {
                 return TextButton(
@@ -215,7 +218,7 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                   child: const Text('To Received',
                       style: TextStyle(color: Colors.white)),
                 );
-              } else if (state == 'received') {
+              } else if (returnadm == false) {
                 return TextButton(
                   onPressed: () async {
                     try {

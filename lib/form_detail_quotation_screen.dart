@@ -20,27 +20,107 @@ class FormDetailQuotation extends StatefulWidget {
 
 class _FormDetailQuotationState extends State<FormDetailQuotation> {
   List<Map<String, dynamic>> products = [];
-  List<Map<String, dynamic>> filteredProducts = [];
   List<Map<String, dynamic>> quotationLines = [];
   final TextEditingController _searchController = TextEditingController();
   final TextEditingController _noteController = TextEditingController();
 
+  // Lazy loading properties
+  bool _isLoading = false;
+  bool _hasMoreProducts = true;
+  int _currentOffset = 0;
+  final int _productsPerPage = 20;
+
+  // Search mode tracking
+  bool _isSearchMode = false;
+  String _lastSearchQuery = '';
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
-    _loadProducts();
-    _searchController.addListener(_filterProducts);
+    _loadInitialProducts();
+    _searchController.addListener(_onSearchChanged);
+    _scrollController.addListener(_scrollListener);
   }
 
-  Future<void> _loadProducts() async {
-    try {
-      final fetchedProducts = await widget.odooService.fetchProducts();
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _noteController.dispose();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // Listener for scroll events to implement lazy loading
+  void _scrollListener() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 500) {
+      if (!_isLoading && _hasMoreProducts) {
+        if (_isSearchMode) {
+          _searchProducts(_lastSearchQuery, loadMore: true);
+        } else {
+          _loadMoreProducts();
+        }
+      }
+    }
+  }
+
+  // Debounced search function
+  int _searchDebounce = 0;
+  void _onSearchChanged() {
+    final query = _searchController.text.trim();
+    _lastSearchQuery = query;
+
+    // If search is empty, load regular products
+    if (query.isEmpty) {
       setState(() {
-        // Store all products in both lists
+        _isSearchMode = false;
+        _currentOffset = 0;
+      });
+      _loadInitialProducts();
+      return;
+    }
+
+    // Set search mode flag
+    _isSearchMode = true;
+
+    // Simple debounce implementation
+    final currentDebounce = ++_searchDebounce;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (currentDebounce == _searchDebounce &&
+          query == _searchController.text.trim()) {
+        _searchProducts(query);
+      }
+    });
+  }
+
+  // Initial products load
+  Future<void> _loadInitialProducts() async {
+    if (_isSearchMode) return;
+
+    setState(() {
+      _isLoading = true;
+      _currentOffset = 0;
+      products = [];
+    });
+
+    try {
+      final fetchedProducts = await widget.odooService.fetchProducts(
+        limit: _productsPerPage,
+        offset: 0,
+      );
+
+      setState(() {
         products = List.from(fetchedProducts);
-        filteredProducts = List.from(fetchedProducts);
+        _isLoading = false;
+        _hasMoreProducts = fetchedProducts.length == _productsPerPage;
+        _currentOffset = fetchedProducts.length;
       });
     } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+
       WidgetsBinding.instance.addPostFrameCallback((_) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error loading products: $e')),
@@ -49,41 +129,156 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
     }
   }
 
-  void _filterProducts() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      filteredProducts = products.where((product) {
-        // Ambil nilai name dan default_code dengan validasi
-        final name = product['name']?.toLowerCase() ?? '';
-        final code = product['default_code'];
-        final lowerCaseCode =
-            (code != null && code is String) ? code.toLowerCase() : '';
+  // Load more products when scrolling down (lazy loading)
+  Future<void> _loadMoreProducts() async {
+    if (_isLoading || !_hasMoreProducts || _isSearchMode) return;
 
-        // Pastikan nama atau kode cocok dengan query
-        return name.contains(query) || lowerCaseCode.contains(query);
-      }).toList();
+    setState(() {
+      _isLoading = true;
     });
+
+    try {
+      final fetchedProducts = await widget.odooService.fetchProducts(
+        limit: _productsPerPage,
+        offset: _currentOffset,
+      );
+
+      setState(() {
+        products.addAll(fetchedProducts);
+        _isLoading = false;
+        _hasMoreProducts = fetchedProducts.length == _productsPerPage;
+        _currentOffset += fetchedProducts.length;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error loading more products: $e')),
+      );
+    }
+  }
+
+  // Search products directly from the database
+  Future<void> _searchProducts(String query, {bool loadMore = false}) async {
+    if (_isLoading) return;
+
+    if (!loadMore) {
+      setState(() {
+        _isLoading = true;
+        _currentOffset = 0;
+        products = [];
+      });
+    } else {
+      setState(() {
+        _isLoading = true;
+      });
+    }
+
+    try {
+      // Create a domain that searches both name and default_code
+      final searchDomain = [
+        '&',
+        ['detailed_type', '=', 'product'],
+        '|',
+        ['name', 'ilike', query],
+        ['default_code', 'ilike', query]
+      ];
+
+      final fetchedProducts = await widget.odooService.fetchProducts(
+        limit: _productsPerPage,
+        offset: _currentOffset,
+        domain: searchDomain,
+      );
+
+      setState(() {
+        if (loadMore) {
+          products.addAll(fetchedProducts);
+        } else {
+          products = List.from(fetchedProducts);
+        }
+        _isLoading = false;
+        _hasMoreProducts = fetchedProducts.length == _productsPerPage;
+        _currentOffset += fetchedProducts.length;
+      });
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Error searching products: $e')),
+      );
+    }
   }
 
   void _addProductLine(Map<String, dynamic> product) {
+    // Check if product exists
+    // ignore: unnecessary_null_comparison
+    if (product == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content:
+                Text('Error: Product does not exist or has been deleted.')),
+      );
+      return;
+    }
+
     setState(() {
-      final existingIndex = quotationLines
-          .indexWhere((line) => line['product_id'] == product['id']);
+      // Get product ID safely, prefer variant ID if available
+      int productId;
+      if (product['product_variant_ids'] != null &&
+          product['product_variant_ids'] is List &&
+          product['product_variant_ids'].isNotEmpty) {
+        productId = product['product_variant_ids'][0];
+      } else {
+        productId = product['id'];
+      }
+
+      // Check if product already exists in quotation lines
+      final existingIndex =
+          quotationLines.indexWhere((line) => line['product_id'] == productId);
+
       if (existingIndex >= 0) {
-        final availableQty = product['qty_available'];
-        if (quotationLines[existingIndex]['product_uom_qty'] < availableQty) {
-          quotationLines[existingIndex]['product_uom_qty'] += 1;
+        final availableQty = product['qty_available'] ?? 0;
+        final currentQty =
+            quotationLines[existingIndex]['product_uom_qty'] ?? 0;
+
+        if (currentQty < availableQty) {
+          quotationLines[existingIndex]['product_uom_qty'] = currentQty + 1;
         }
       } else {
+        // Create a direct product name
+        final productName = product['name'] ?? 'Unknown Product';
+        final defaultCode = product['default_code'];
+        final formattedName = (defaultCode != null &&
+                defaultCode is String &&
+                defaultCode.isNotEmpty)
+            ? '[$defaultCode] $productName'
+            : productName;
+
+        // Get UOM ID safely
+        int productUomId = 1; // Default value
+        if (product['uom_id'] != null &&
+            product['uom_id'] is List &&
+            product['uom_id'].isNotEmpty) {
+          productUomId = product['uom_id'][0];
+        }
+
+        // Get price safely
+        final priceUnit = product['list_price'] ?? 0.0;
+
         quotationLines.add({
-          'product_id': product['id'],
+          'product_id': productId,
           'product_template_id': product['id'],
-          'name': '[${product['default_code']}] ${product['name']}',
+          'name': formattedName,
           'product_uom_qty': 1,
-          'product_uom': product['uom_id'][0],
-          'price_unit': product['list_price'],
-          'qty_available': product['qty_available'],
+          'product_uom': productUomId,
+          'price_unit': priceUnit,
+          'qty_available': product['qty_available'] ?? 0,
           'image_1920': product['image_1920'],
+          // Using a simple TextEditingController instead of MoneyMaskedTextController
           'price_controller': MoneyMaskedTextController(
             decimalSeparator: ',',
             thousandSeparator: '.',
@@ -147,8 +342,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
       // Only update quantity for product lines, not notes
       if (quotationLines[index]['display_type'] != 'line_note') {
         final currentQty = quotationLines[index]['product_uom_qty'] ?? 0;
-        // final maxQty =
-        //     quotationLines[index]['qty_available'] ?? double.infinity;
         final newQty = currentQty + delta;
 
         if (newQty > 0) {
@@ -334,8 +527,8 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
       appBar: AppBar(
         title: TextField(
           controller: _searchController,
-          decoration: InputDecoration(
-            hintText: "Search products...",
+          decoration: const InputDecoration(
+            hintText: "Search products by name or code...",
             prefixIcon: Icon(Icons.search),
             border: OutlineInputBorder(),
           ),
@@ -349,54 +542,77 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
         child: Column(
           children: [
             Expanded(
-              child: ListView.builder(
-                itemCount: filteredProducts.length,
-                itemBuilder: (context, index) {
-                  final product = filteredProducts[index];
-                  final productImageBase64 = product['image_1920'];
-                  return Card(
-                    child: ListTile(
-                      leading: ClipRRect(
-                        borderRadius: BorderRadius.circular(
-                            8), // Membulatkan sudut gambar
-                        child: productImageBase64 != null &&
-                                productImageBase64 is String
-                            ? Image.memory(
-                                base64Decode(productImageBase64),
-                                width: 50, // Lebar gambar
-                                height: 50, // Tinggi gambar
-                                fit: BoxFit.cover,
-                                errorBuilder: (context, error, stackTrace) {
-                                  return const Icon(
-                                    Icons.broken_image,
-                                    size:
-                                        50, // Jika terjadi kesalahan, tampilkan ikon
-                                  );
-                                },
-                              )
-                            : const Icon(
-                                Icons.image_not_supported,
-                                size: 50, // Placeholder jika gambar tidak ada
-                              ),
-                      ),
-                      title: Text(
-                        "[${product['default_code']}] ${product['name']}",
-                        style: const TextStyle(
-                          fontSize: 12,
+              child: Stack(
+                children: [
+                  // Products list
+                  ListView.builder(
+                    controller: _scrollController,
+                    itemCount: products.length + (_hasMoreProducts ? 1 : 0),
+                    itemBuilder: (context, index) {
+                      // Show loading indicator at the end
+                      if (index == products.length) {
+                        return const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(8.0),
+                            child: CircularProgressIndicator(),
+                          ),
+                        );
+                      }
+
+                      final product = products[index];
+                      final productImageBase64 = product['image_1920'];
+                      return Card(
+                        child: ListTile(
+                          leading: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: productImageBase64 != null &&
+                                    productImageBase64 is String
+                                ? Image.memory(
+                                    base64Decode(productImageBase64),
+                                    width: 50,
+                                    height: 50,
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return const Icon(
+                                        Icons.broken_image,
+                                        size: 50,
+                                      );
+                                    },
+                                  )
+                                : const Icon(
+                                    Icons.image_not_supported,
+                                    size: 50,
+                                  ),
+                          ),
+                          title: Text(
+                            "[${product['default_code']}] ${product['name']}",
+                            style: const TextStyle(
+                              fontSize: 12,
+                            ),
+                          ),
+                          subtitle: Text(
+                              "${currencyFormatter.format(product['list_price'])} | Available: ${_formatQty(product['qty_available'])}",
+                              style: const TextStyle(
+                                fontSize: 12,
+                              )),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.add, color: Colors.blue),
+                            onPressed: () => _addProductLine(product),
+                          ),
                         ),
-                      ),
-                      subtitle: Text(
-                          "${currencyFormatter.format(product['list_price'])} | Available: ${_formatQty(product['qty_available'])}",
-                          style: const TextStyle(
-                            fontSize: 12,
-                          )),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.add, color: Colors.blue),
-                        onPressed: () => _addProductLine(product),
+                      );
+                    },
+                  ),
+
+                  // Initial loading overlay
+                  if (_isLoading && products.isEmpty)
+                    Container(
+                      color: Colors.white.withOpacity(0.7),
+                      child: const Center(
+                        child: CircularProgressIndicator(),
                       ),
                     ),
-                  );
-                },
+                ],
               ),
             ),
             const Divider(height: 5),
@@ -418,20 +634,17 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
               ],
             ),
             const SizedBox(height: 8),
-
             Expanded(
               child: ListView.builder(
                 itemCount: quotationLines.length,
                 itemBuilder: (context, index) {
                   final line = quotationLines[index];
-                  final productImageBase64 =
-                      line['image_1920']; // Gambar produk
+                  final productImageBase64 = line['image_1920'];
 
                   if (line['display_type'] == 'line_note') {
                     return Card(
                       margin: const EdgeInsets.symmetric(vertical: 8.0),
-                      color: Colors
-                          .yellow[100], // Light yellow background for notes
+                      color: Colors.yellow[100],
                       child: Padding(
                         padding: const EdgeInsets.all(12.0),
                         child: Row(
@@ -468,7 +681,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          // Nama produk di bagian atas
                           Text(
                             line['name'],
                             style: const TextStyle(
@@ -477,15 +689,12 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                             ),
                             textAlign: TextAlign.left,
                           ),
-                          const SizedBox(
-                              height: 8), // Jarak antara nama dan baris kedua
+                          const SizedBox(height: 8),
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              // Kolom Kiri
                               Row(
                                 children: [
-                                  // Gambar Produk
                                   ClipRRect(
                                     borderRadius: BorderRadius.circular(8),
                                     child: productImageBase64 != null &&
@@ -499,15 +708,13 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                                 (context, error, stackTrace) {
                                               return const Icon(
                                                 Icons.broken_image,
-                                                size:
-                                                    50, // Jika error, tampilkan ikon ini
+                                                size: 50,
                                               );
                                             },
                                           )
                                         : const Icon(
                                             Icons.image_not_supported,
-                                            size:
-                                                50, // Placeholder jika gambar tidak ada
+                                            size: 50,
                                           ),
                                   ),
                                   const SizedBox(width: 8),
@@ -527,7 +734,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                           style: const TextStyle(fontSize: 12),
                                           onChanged: (value) {
                                             setState(() {
-                                              // Jika kolom kosong, atur teks menjadi "0"
                                               if (value.isEmpty) {
                                                 line['price_controller'].text =
                                                     "0,00";
@@ -541,7 +747,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                                           .length),
                                                 );
                                               } else {
-                                                // Perbarui posisi kursor untuk teks yang valid
                                                 final cursorPosition =
                                                     line['price_controller']
                                                         .selection
@@ -559,7 +764,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                             });
                                           },
                                           onSubmitted: (value) {
-                                            // Tetapkan nilai price_unit saat selesai mengedit
                                             final parsedPrice =
                                                 line['price_controller']
                                                     .numberValue;
@@ -576,7 +780,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                               ),
                               Row(
                                 children: [
-                                  // Tombol (-)
                                   IconButton(
                                     icon: Icon(
                                       Icons.remove_circle,
@@ -589,7 +792,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                             ? () => _updateQuantity(index, -1)
                                             : null,
                                   ),
-                                  // Kuantitas
                                   SizedBox(
                                     width: 40,
                                     child: TextField(
@@ -604,7 +806,7 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                       ),
                                       decoration: const InputDecoration(
                                         border: InputBorder.none,
-                                        isDense: true, // Kurangi padding
+                                        isDense: true,
                                       ),
                                       onSubmitted: (value) {
                                         final parsedQty = int.tryParse(value) ??
@@ -624,17 +826,13 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                                       },
                                     ),
                                   ),
-                                  // Tombol (+)
                                   IconButton(
-                                    icon: Icon(
+                                    icon: const Icon(
                                       Icons.add_circle,
-                                      color: Colors
-                                          .green, // Selalu hijau karena tidak ada pengecekan
+                                      color: Colors.green,
                                     ),
-                                    onPressed: () => _updateQuantity(
-                                        index, 1), // Selalu aktif
+                                    onPressed: () => _updateQuantity(index, 1),
                                   ),
-                                  // Tombol Delete
                                   IconButton(
                                     icon: const Icon(Icons.delete,
                                         color: Colors.red),
@@ -644,7 +842,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                               ),
                             ],
                           ),
-                          // Tambahkan field notes di bawah
                           const SizedBox(height: 8),
                           Container(
                             width: double.infinity,
@@ -677,7 +874,6 @@ class _FormDetailQuotationState extends State<FormDetailQuotation> {
                 },
               ),
             ),
-            // Save Button
             Center(
               child: ElevatedButton(
                 onPressed: _saveQuotationLines,

@@ -6,6 +6,7 @@ import 'odoo_service.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/services.dart';
 import 'edit_header_dialog.dart';
+import 'product_search_dialog.dart';
 
 class QuotationDetailScreen extends StatefulWidget {
   final OdooService odooService;
@@ -609,110 +610,14 @@ class _QuotationDetailScreenState extends State<QuotationDetailScreen> {
     });
   }
 
-  void _showAddProductDialog() async {
-    try {
-      // Fetch daftar produk
-      final products = await widget.odooService.fetchProducts();
-
-      // State lokal untuk pencarian
-      List<Map<String, dynamic>> filteredProducts = List.from(products);
-      final searchController = TextEditingController();
-
-      showDialog(
-        context: context,
-        builder: (context) {
-          return AlertDialog(
-            title: const Text(
-              "Select Product",
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-            ),
-            content: StatefulBuilder(
-              builder: (context, setState) {
-                return SizedBox(
-                  width: double.maxFinite,
-                  height: 400.0,
-                  child: Column(
-                    children: [
-                      // Search TextField
-                      TextField(
-                        controller: searchController,
-                        decoration: const InputDecoration(
-                          labelText: 'Search Product',
-                          hintText: 'Enter product name or code',
-                          prefixIcon: Icon(Icons.search),
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (query) {
-                          setState(() {
-                            filteredProducts = products.where((product) {
-                              final nameMatch = product['name']
-                                  .toString()
-                                  .toLowerCase()
-                                  .contains(query.toLowerCase());
-                              final codeMatch = product['default_code'] != null
-                                  ? product['default_code']
-                                      .toString()
-                                      .toLowerCase()
-                                      .contains(query.toLowerCase())
-                                  : false;
-                              return nameMatch || codeMatch;
-                            }).toList();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Filtered Product List
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: filteredProducts.length,
-                          itemBuilder: (context, index) {
-                            final product = filteredProducts[index];
-                            return ListTile(
-                              title: Text(
-                                '[${product['default_code']}] ${product['name']}',
-                                style: const TextStyle(fontSize: 14),
-                              ),
-                              subtitle: Text(
-                                'Price: ${currencyFormatter.format(product['list_price'] ?? 0.0)}\n'
-                                'Available: ${product['qty_available']}',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.add_circle,
-                                    color: Colors.green),
-                                onPressed: () {
-                                  Navigator.of(context).pop({
-                                    'id': null,
-                                    'product_id': product['id'],
-                                    'name':
-                                        '[${product['default_code']}] ${product['name']}',
-                                    'product_uom_qty': 1,
-                                    'price_unit': product['list_price'],
-                                  });
-                                },
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              },
-            ),
-          );
-        },
-      ).then((result) {
-        if (result != null) {
-          _addProduct(result);
-        }
-        searchController.dispose(); // Dispose the search controller after use
-      });
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error loading products: $e')),
-      );
-    }
+  void _showAddProductDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => ProductSearchDialog(
+        odooService: widget.odooService,
+        onProductSelected: _addProduct,
+      ),
+    );
   }
 
   void _cancelEditMode() {

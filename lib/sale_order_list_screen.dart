@@ -174,14 +174,16 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
       List<String> orderNames =
           _quotations.map((order) => order['name'].toString()).toList();
 
-      Map<String, String> statusMap =
+      Map<String, dynamic> statusMap =
           await widget.odooService.fetchInvoiceStatusBatch(orderNames);
+
+      print('Raw Invoice Status Map: $statusMap');
 
       if (mounted) {
         setState(() {
           for (var quotation in _quotations) {
             String orderName = quotation['name'];
-            quotation['payment_state'] = statusMap[orderName];
+            quotation['invoice_status'] = statusMap[orderName];
           }
           _applyFiltersToQuotations();
         });
@@ -469,7 +471,7 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
         item['date_order']?.split(' ')[0] ?? 'Unknown'; // Format tanggal
     // final totalPrice = item['amount_total'] ?? 0.0; // Total price
     final state = item['state'] ?? 'quotation';
-    final invoiceState = item['payment_state'] ?? 'not_found';
+    final invoiceStatus = item['invoice_status'] ?? 'unknown';
 
     Color _getStateColor(String state) {
       switch (state) {
@@ -611,6 +613,39 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
                     ),
                   ],
                 ),
+                if (state != 'draft')
+                  TableRow(
+                    children: [
+                      const Text(
+                        "Invoice status",
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      const Text(
+                        " :",
+                        style: TextStyle(fontSize: 12),
+                      ),
+                      Builder(builder: (context) {
+                        String displayText;
+                        if (invoiceStatus == null ||
+                            invoiceStatus == 'unknown') {
+                          displayText = 'No Invoice';
+                        } else if (invoiceStatus is String) {
+                          // Mapping manual dari key ke label
+                          switch (invoiceStatus) {
+                            case '3_done':
+                              displayText = '3 [✓]';
+                            case '4_done':
+                              displayText = '4 [✓]';
+                            default:
+                              displayText = invoiceStatus;
+                          }
+                        } else {
+                          displayText = 'Unknown';
+                        }
+                        return Text(displayText);
+                      }),
+                    ],
+                  ),
               ],
             ),
             const SizedBox(height: 2),
@@ -625,24 +660,6 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
                     fontSize: 13,
                   ),
                 ),
-                if (state != 'draft')
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: _getStatusColor(invoiceState),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      _mapInvoiceStatus(invoiceState),
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500),
-                    ),
-                  )
-                else
-                  const SizedBox.shrink(),
               ],
             ),
           ],
@@ -658,43 +675,43 @@ class _SaleOrderListScreenState extends State<SaleOrderListScreen> {
     );
   }
 
-  String _mapInvoiceStatus(String status) {
-    switch (status) {
-      case 'not_paid':
-        return 'Not Paid';
-      case 'in_payment':
-        return 'In Payment';
-      case 'paid':
-        return 'Paid';
-      case 'partial':
-        return 'Partially Paid';
-      case 'reversed':
-        return 'Reversed';
-      case 'not_found':
-        return 'Unknown';
-      default:
-        return 'Unknown';
-    }
-  }
+  // String _mapInvoiceStatus(String status) {
+  //   switch (status) {
+  //     case 'not_paid':
+  //       return 'Not Paid';
+  //     case 'in_payment':
+  //       return 'In Payment';
+  //     case 'paid':
+  //       return 'Paid';
+  //     case 'partial':
+  //       return 'Partially Paid';
+  //     case 'reversed':
+  //       return 'Reversed';
+  //     case 'not_found':
+  //       return 'Unknown';
+  //     default:
+  //       return 'Unknown';
+  //   }
+  // }
 
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'not_paid':
-        return Colors.orange;
-      case 'in_payment':
-        return Colors.blue;
-      case 'paid':
-        return Colors.green;
-      case 'partial':
-        return Colors.purple;
-      case 'reversed':
-        return Colors.red;
-      case 'not_found':
-        return Colors.grey;
-      default:
-        return Colors.grey;
-    }
-  }
+  // Color _getStatusColor(String status) {
+  //   switch (status) {
+  //     case 'not_paid':
+  //       return Colors.orange;
+  //     case 'in_payment':
+  //       return Colors.blue;
+  //     case 'paid':
+  //       return Colors.green;
+  //     case 'partial':
+  //       return Colors.purple;
+  //     case 'reversed':
+  //       return Colors.red;
+  //     case 'not_found':
+  //       return Colors.grey;
+  //     default:
+  //       return Colors.grey;
+  //   }
+  // }
 
   @override
   Widget build(BuildContext context) {

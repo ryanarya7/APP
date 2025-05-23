@@ -76,7 +76,6 @@ class _HomeScreenState extends State<HomeScreen> {
       final prefs = await SharedPreferences.getInstance();
       final encoded = prefs.getString('cached_products');
       final timestamp = prefs.getInt('cache_timestamp');
-
       if (encoded != null && timestamp != null) {
         final now = DateTime.now().millisecondsSinceEpoch;
         final cacheDuration = 30 * 60 * 1000; // 30 menit
@@ -85,12 +84,12 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _products = products;
             _filteredProducts = products;
+            _productOffset = products.length;
           });
         }
       }
     } catch (e) {
       print('Error loading cache: $e');
-      // Fallback ke fetch data dari server
       _initializeProducts();
     }
   }
@@ -114,42 +113,101 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _initializeProducts({String? categoryId, String? searchQuery}) async {
-  if (_isLoadingMore || !_hasMoreProducts) return;
-  
-  setState(() {
-    _isLoadingMore = true;
-    if (_products.isEmpty) _isFirstLoad = true;
-  });
+    if (_isLoadingMore || !_hasMoreProducts) return;
 
-  try {
-    // Create base domain for filtering products
-    List<List<dynamic>> domain = [
-      ['detailed_type', '=', 'product']
-    ];
+    setState(() {
+      _isLoadingMore = true;
+      if (_products.isEmpty) _isFirstLoad = true;
+    });
 
-    // Add category filter if selected
-    if (categoryId != null) {
-      domain.add(['categ_id', '=', int.parse(categoryId)]);
-    }
+    try {
+      // Create base domain for filtering products
+      List<List<dynamic>> domain = [
+        ['detailed_type', '=', 'product']
+      ];
 
-    // Track product IDs to prevent duplicates
-    Set<int> productIds = _products.map((p) => p['id'] as int).toSet();
+      // Add category filter if selected
+      if (categoryId != null) {
+        domain.add(['categ_id', '=', int.parse(categoryId)]);
+      }
 
-    // Handle search query if provided
-    if (searchQuery?.isNotEmpty == true) {
-      // First search by name
-      List<List<dynamic>> nameDomain = List.from(domain);
-      nameDomain.add(['name', 'ilike', searchQuery]);
+      // Track product IDs to prevent duplicates
+      Set<int> productIds = _products.map((p) => p['id'] as int).toSet();
 
-      final nameProducts = await widget.odooService.fetchProductsTemplate(
+      // Handle search query if provided
+      if (searchQuery?.isNotEmpty == true) {
+        // First search by name
+        List<List<dynamic>> nameDomain = List.from(domain);
+        nameDomain.add(['name', 'ilike', searchQuery]);
+
+        final nameProducts = await widget.odooService.fetchProductsTemplate(
+          limit: _productLimit,
+          offset: _productOffset,
+          domain: nameDomain,
+        );
+
+        // Add non-duplicate products from name search
+        List<Map<String, dynamic>> newProducts = [];
+        for (var product in nameProducts) {
+          int id = product['id'];
+          if (!productIds.contains(id)) {
+            productIds.add(id);
+            newProducts.add(product);
+          }
+        }
+
+        // If we need more products, search by default_code
+        if (newProducts.length < _productLimit) {
+          List<List<dynamic>> codeDomain = List.from(domain);
+          codeDomain.add(['default_code', 'ilike', searchQuery]);
+
+          final codeProducts = await widget.odooService.fetchProductsTemplate(
+            limit: _productLimit *
+                2, // Fetch more to account for potential duplicates
+            offset: _productOffset,
+            domain: codeDomain,
+          );
+
+          // Add non-duplicate products from code search
+          for (var product in codeProducts) {
+            int id = product['id'];
+            if (!productIds.contains(id)) {
+              productIds.add(id);
+              newProducts.add(product);
+              // Stop once we reach the limit
+              if (newProducts.length >= _productLimit) break;
+            }
+          }
+        }
+
+        if (!mounted) return;
+        setState(() {
+          // For the first page, replace products; for subsequent pages, append
+          if (_productOffset == 0) {
+            _products = newProducts;
+            _filteredProducts = newProducts;
+          } else {
+            _products.addAll(newProducts);
+            _filteredProducts = List.from(
+                _products); // Create a new list to prevent reference issues
+          }
+          _productOffset += newProducts.length;
+          _hasMoreProducts = newProducts.length == _productLimit;
+          _isFirstLoad = false;
+        });
+        return;
+      }
+
+      // Standard product fetch (when no search query)
+      final products = await widget.odooService.fetchProductsTemplate(
         limit: _productLimit,
         offset: _productOffset,
-        domain: nameDomain,
+        domain: domain,
       );
 
-      // Add non-duplicate products from name search
+      // Remove duplicates
       List<Map<String, dynamic>> newProducts = [];
-      for (var product in nameProducts) {
+      for (var product in products) {
         int id = product['id'];
         if (!productIds.contains(id)) {
           productIds.add(id);
@@ -157,92 +215,36 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       }
 
-      // If we need more products, search by default_code
-      if (newProducts.length < _productLimit) {
-        List<List<dynamic>> codeDomain = List.from(domain);
-        codeDomain.add(['default_code', 'ilike', searchQuery]);
-
-        final codeProducts = await widget.odooService.fetchProductsTemplate(
-          limit: _productLimit * 2, // Fetch more to account for potential duplicates
-          offset: _productOffset,
-          domain: codeDomain,
-        );
-
-        // Add non-duplicate products from code search
-        for (var product in codeProducts) {
-          int id = product['id'];
-          if (!productIds.contains(id)) {
-            productIds.add(id);
-            newProducts.add(product);
-            // Stop once we reach the limit
-            if (newProducts.length >= _productLimit) break;
-          }
-        }
-      }
-
       if (!mounted) return;
       setState(() {
-        // For the first page, replace products; for subsequent pages, append
         if (_productOffset == 0) {
           _products = newProducts;
           _filteredProducts = newProducts;
         } else {
           _products.addAll(newProducts);
-          _filteredProducts = List.from(_products); // Create a new list to prevent reference issues
+          _filteredProducts = List.from(
+              _products); // Create a new list to prevent reference issues
         }
         _productOffset += newProducts.length;
         _hasMoreProducts = newProducts.length == _productLimit;
         _isFirstLoad = false;
       });
-      return;
-    }
 
-    // Standard product fetch (when no search query)
-    final products = await widget.odooService.fetchProductsTemplate(
-      limit: _productLimit,
-      offset: _productOffset,
-      domain: domain,
-    );
-
-    // Remove duplicates
-    List<Map<String, dynamic>> newProducts = [];
-    for (var product in products) {
-      int id = product['id'];
-      if (!productIds.contains(id)) {
-        productIds.add(id);
-        newProducts.add(product);
+      if (categoryId == null && searchQuery == null) {
+        await _saveProductsToCache(products);
       }
-    }
-
-    if (!mounted) return;
-    setState(() {
-      if (_productOffset == 0) {
-        _products = newProducts;
-        _filteredProducts = newProducts;
-      } else {
-        _products.addAll(newProducts);
-        _filteredProducts = List.from(_products); // Create a new list to prevent reference issues
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error: $e')),
+        );
       }
-      _productOffset += newProducts.length;
-      _hasMoreProducts = newProducts.length == _productLimit;
-      _isFirstLoad = false;
-    });
-
-    if (categoryId == null && searchQuery == null) {
-      await _saveProductsToCache(products);
-    }
-  } catch (e) {
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e')),
-      );
-    }
-  } finally {
-    if (mounted) {
-      setState(() => _isLoadingMore = false);
+    } finally {
+      if (mounted) {
+        setState(() => _isLoadingMore = false);
+      }
     }
   }
-}
 
   Future<void> _initializeCategories() async {
     setState(() {
@@ -291,23 +293,24 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   void _filterProductsByCategory(String? categoryId) {
-  setState(() {
-    // Toggle kategori: jika sama, unselect
-    _selectedCategoryId = (_selectedCategoryId == categoryId) ? null : categoryId;
-    _productOffset = 0;
-    _hasMoreProducts = true;
-    _products = []; // Using clear array syntax instead of .clear()
-    _filteredProducts = []; // Using clear array syntax instead of .clear()
-  });
-  
-  // Use a slight delay to ensure the state is updated before fetching
-  Timer(const Duration(milliseconds: 50), () {
-    _initializeProducts(
-      categoryId: _selectedCategoryId,
-      searchQuery: _searchController.text,
-    );
-  });
-}
+    setState(() {
+      // Toggle kategori: jika sama, unselect
+      _selectedCategoryId =
+          (_selectedCategoryId == categoryId) ? null : categoryId;
+      _productOffset = 0;
+      _hasMoreProducts = true;
+      _products = []; // Using clear array syntax instead of .clear()
+      _filteredProducts = []; // Using clear array syntax instead of .clear()
+    });
+
+    // Use a slight delay to ensure the state is updated before fetching
+    Timer(const Duration(milliseconds: 50), () {
+      _initializeProducts(
+        categoryId: _selectedCategoryId,
+        searchQuery: _searchController.text,
+      );
+    });
+  }
 
   Widget _buildCategoryList() {
     if (_isCategoryLoading) {

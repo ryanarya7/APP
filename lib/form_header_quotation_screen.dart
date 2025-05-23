@@ -30,44 +30,42 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
 
   String? customervat;
   bool showSalespersonField = false;
+  // ignore: unused_field
+  bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _isLoading = true;
+    _loadData().then((_) {
+      setState(() {
+        _isLoading = false;
+      });
+    });
   }
 
   Future<void> _loadData() async {
     try {
-      final fetchedCustomers = await widget.odooService.fetchCustomerz();
+      final fetchedCustomers =
+          await widget.odooService.fetchCustomerz(); // Sudah pakai cache
       final fetchedSalespersons = await widget.odooService.fetchSalespersons();
       final fetchedPaymentTerms = await widget.odooService.fetchPaymentTerms();
       final fetchedWarehouses = await widget.odooService.fetchWarehouses();
-      final fetchedAddresses = await widget.odooService.fetchCustomerz();
-
       final loggedInUser = await widget.odooService.fetchUser();
 
       setState(() {
         customers = fetchedCustomers;
-        print('Jumlah customer: ${customers.length}');
         salespersons = fetchedSalespersons;
         paymentTerms = fetchedPaymentTerms;
         warehouses = fetchedWarehouses;
-        globalAddresses = fetchedAddresses;
-
-        // Auto-select salesperson based on logged-in user
+        // Auto-select salesperson & warehouse
         selectedSalesperson = salespersons.firstWhere(
-          (salesperson) => salesperson['name'] == loggedInUser['name'],
-          orElse: () => salespersons.isNotEmpty
-              ? salespersons.first
-              : <String, dynamic>{},
+          (s) => s['name'] == loggedInUser['name'],
+          orElse: () => salespersons.isNotEmpty ? salespersons.first : {},
         );
-
-        // Auto-select warehouse based on logged-in user's warehouse_id
         selectedWarehouse = warehouses.firstWhere(
-          (warehouse) => warehouse['id'] == loggedInUser['warehouse_id'],
-          orElse: () =>
-              warehouses.isNotEmpty ? warehouses.first : <String, dynamic>{},
+          (w) => w['id'] == loggedInUser['warehouse_id'],
+          orElse: () => warehouses.isNotEmpty ? warehouses.first : {},
         );
       });
     } catch (e) {
@@ -265,39 +263,46 @@ class _FormHeaderQuotationState extends State<FormHeaderQuotation> {
           ),
         ),
         const SizedBox(height: 8),
-        DropdownSearch<Map<String, dynamic>>(
-          items: items,
-          selectedItem: selectedItem,
-          itemAsString: (item) => item['name'] ?? '',
-          onChanged: enabled ? onChanged : null, // Nonaktifkan jika tidak aktif
-          popupProps: PopupProps.menu(
-            showSearchBox: true,
-            searchFieldProps: const TextFieldProps(
-              decoration: InputDecoration(
-                labelText: 'Search',
-                border: OutlineInputBorder(),
+        if (items.isEmpty && enabled)
+          const Padding(
+            padding: EdgeInsets.all(8.0),
+            child: Center(child: CircularProgressIndicator()),
+          ),
+        if (items.isNotEmpty || !enabled)
+          DropdownSearch<Map<String, dynamic>>(
+            items: items,
+            selectedItem: selectedItem,
+            itemAsString: (item) => item['name'] ?? '',
+            onChanged:
+                enabled ? onChanged : null, // Nonaktifkan jika tidak aktif
+            popupProps: PopupProps.menu(
+              showSearchBox: true,
+              searchFieldProps: const TextFieldProps(
+                decoration: InputDecoration(
+                  labelText: 'Search',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              disabledItemFn: (item) =>
+                  !enabled, // Nonaktifkan item jika dropdown nonaktif
+            ),
+            dropdownDecoratorProps: DropDownDecoratorProps(
+              dropdownSearchDecoration: InputDecoration(
+                filled: true,
+                fillColor:
+                    enabled ? Colors.white : Colors.grey[200], // Warna latar
+                enabledBorder: OutlineInputBorder(
+                  borderSide:
+                      BorderSide(color: enabled ? Colors.blue : Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.grey),
+                  borderRadius: BorderRadius.circular(8),
+                ),
               ),
             ),
-            disabledItemFn: (item) =>
-                !enabled, // Nonaktifkan item jika dropdown nonaktif
           ),
-          dropdownDecoratorProps: DropDownDecoratorProps(
-            dropdownSearchDecoration: InputDecoration(
-              filled: true,
-              fillColor:
-                  enabled ? Colors.white : Colors.grey[200], // Warna latar
-              enabledBorder: OutlineInputBorder(
-                borderSide:
-                    BorderSide(color: enabled ? Colors.blue : Colors.grey),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              disabledBorder: OutlineInputBorder(
-                borderSide: BorderSide(color: Colors.grey),
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
-          ),
-        ),
       ],
     );
   }
