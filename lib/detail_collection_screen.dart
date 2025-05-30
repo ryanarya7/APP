@@ -475,6 +475,8 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                           sum + (invoice['partial_total_payment'] ?? 0.0),
                     );
 
+                    final returnadm = detail['is_back_to_adm'] ?? false;
+
                     return Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -529,7 +531,8 @@ class _DetailCollectionScreenState extends State<DetailCollectionScreen> {
                                           ),
                                         ),
                                         const SizedBox(width: 8),
-                                        if (collectionState == 'received')
+                                        if (collectionState == 'received' &&
+                                            returnadm != true)
                                           GestureDetector(
                                             onTap: () =>
                                                 _openCheckWizard(invoice),
